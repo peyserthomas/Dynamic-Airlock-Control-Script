@@ -9,6 +9,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.Eventing.Reader;
+
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -21,6 +22,7 @@ using VRage.Game.ModAPI.Ingame;
 using VRage.Game.ModAPI.Ingame.Utilities;
 using VRage.Game.ObjectBuilders.Definitions;
 using VRageMath;
+using VRageRender;
 
 namespace IngameScript
 {
@@ -32,9 +34,13 @@ namespace IngameScript
         bool DoorsLocked = false;
         bool GateMode = false;
         bool InteriorMode = false;
+
         bool AtmosphereCheck = false;
         bool OxygenTankAttached = false;
         bool OxygenTankFull = false;
+
+        bool AirlockButtonPanelsAttached = false;
+        bool AirlockDisplaysProvided = false;
         double OxygenTankFillPercentage = 0.0;
 
         float TextHeight;
@@ -50,14 +56,16 @@ namespace IngameScript
         IMyAirVent ExternalAirVent;
         IMyAirVent GateAirVent;
         IMyProgrammableBlock ProgrammableBlock;
-        
+        IMyCubeGrid CurrentGrid;
+
         //Block Lists
         List<IMyDoor> ExteriorDoorGroup = new List<IMyDoor>();
         List<IMyDoor> InteriorDoorGroup = new List<IMyDoor>();
         List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
         List<IMyDoor> GateGroup = new List<IMyDoor>();
         List<IMyInteriorLight> AirlockStatusLightGroup = new List<IMyInteriorLight>();
-        List<IMyTextPanel> AirlockDisplays = new List<IMyTextPanel>();
+        List<IMyButtonPanel> AirlockButtonPanels = new List<IMyButtonPanel>();
+        List<IMyTextSurface> AirlockDisplays = new List<IMyTextSurface>();
 
         //Status Variables: 0 = Pressurizing, 1 = Pressurized, 2 = Depressurizing, 3 = Depressurized, 4 = Working
         int LightStatusNumber = 4;
@@ -67,16 +75,19 @@ namespace IngameScript
         Color Red = new Color(255, 0, 0); //Depressurizing
         Color Orange = new Color(255, 125, 0); //Working
         Color Green = new Color(0, 255, 0); //Pressurizing
+        Color CurrentLightColor;
         float[] AirlockLightBlinkIntervals = {1f, 0f, 1f, 0f, 0f};
         float[] AirlockLightsBlinkLengths = {50f, 0f, 50f, 0f, 0f};
         float[] AirlockLightsBlinkOffsets = {0f, 0f, 0f, 0f, 0f};
 
-
+        //Display Data
+        Color CustomGrey = new Color(50, 50, 50);
 
         public Program()
         {
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
             ProgrammableBlock = Me;
+            CurrentGrid = Me.CubeGrid;
         }
 
         public void Save()
@@ -101,6 +112,8 @@ namespace IngameScript
             ProcessArguments(argument);
             AirlockCycling();
             AirlockLightManager();
+
+            WriteAirlockDisplays();
 
 
         }//Ends Main
@@ -157,11 +170,11 @@ namespace IngameScript
             if (AirlockStatusLightGroup.Count == 0){
                 return;
             }
-            
+
             Color[] LightColors = {Orange, Green, Red, Red, Orange};
-            
+
             //Use status number to retrieve light data
-            Color CurrentLightColor = LightColors[LightStatusNumber];
+            CurrentLightColor = LightColors[LightStatusNumber];
             float CurrentBlinkTime = AirlockLightBlinkIntervals[LightStatusNumber];
             float CurrentBlinkLength = AirlockLightsBlinkLengths[LightStatusNumber];
             float CurrentBlinkOffset = AirlockLightsBlinkOffsets[LightStatusNumber];
@@ -179,7 +192,7 @@ namespace IngameScript
         public void AdditionalHardwareCheck()
         {
             AirlockStatusLightGroup.Clear();
-            AirlockDisplays.Clear();
+            AirlockButtonPanels.Clear();
             PrimaryOxygenTank = null;
 
             //Check for primary oxygen tank
@@ -191,27 +204,30 @@ namespace IngameScript
                 string TankName = Tank.CustomName.ToLower();
                 if (TankName.Contains(TankIdentifier.ToLower()))
                 {
+                    //Only need one oxygen tank
                     PrimaryOxygenTank = Tank;
                     break;
                 }
             }
 
             //Check for Display
-            List<IMyTextPanel> AllDisplays = new List<IMyTextPanel>();
-            GridTerminalSystem.GetBlocksOfType(AllDisplays);
-            string DisplayIdentifier = HardwareIdentifier + " Display";
-            foreach (IMyTextPanel Display in AllDisplays)
+            List<IMyButtonPanel> AllButtonPanels = new List<IMyButtonPanel>();
+            GridTerminalSystem.GetBlocksOfType(AllButtonPanels);
+            string DisplayIdentifier = "Button Panel";
+            foreach (IMyButtonPanel ButtonPanel in AllButtonPanels)
             {
-                string DisplayName = Display.CustomName.ToLower();
-                if (DisplayName.Contains(DisplayIdentifier.ToLower()))
+                string ButtonPanelName = ButtonPanel.CustomName.ToLower();
+                //Check if the button panel name has the identifier and name, but not consequtively
+                if (ButtonPanelName.Contains(HardwareIdentifier.ToLower()) && ButtonPanelName.Contains(DisplayIdentifier.ToLower()))
                 {
-                    AirlockDisplays.Add(Display);
+                    AirlockButtonPanels.Add(ButtonPanel);
                 }
             }
 
             //Check for status lights
+            //Use Lambda filter to find lights specifically from the same grid
             List<IMyInteriorLight> AllLights = new List<IMyInteriorLight>();
-            GridTerminalSystem.GetBlocksOfType(AllLights);
+            GridTerminalSystem.GetBlocksOfType(AllLights, Light => Light.CubeGrid == Me.CubeGrid);
             string LightIdentifier = HardwareIdentifier + " Status";
             foreach (IMyInteriorLight Light in AllLights)
             {
@@ -222,35 +238,230 @@ namespace IngameScript
                 }
             }
 
+            AirlockButtonPanelsAttached = (AirlockButtonPanels.Count() > 0);
+            if (AirlockButtonPanelsAttached) VerifyDisplays();
+
             OxygenTankAttached = (PrimaryOxygenTank != null);
         }//Ends AdditionalHardwareCheck
 
-        public void DrawUI(IMyTextPanel Display) 
+        public void WriteAirlockDisplays()
         {
-            var surface = Display;
-            surface.ContentType = ContentType.SCRIPT;
-            surface.Script = "";
-
-            Vector2 TextureSize = surface.TextureSize;
-            Vector2 CanvasSize = surface.SurfaceSize;
-            Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
-
-            using (var frame = surface.DrawFrame())
+            if (AirlockDisplaysProvided)
             {
-                float FontScale = 1.2f;
-                Vector2 textSize = surface.MeasureStringInPixels(
-                new StringBuilder("TextHeightScaleText"),
-                "White",   // font name
-                FontScale   // font scale
-                );
+                foreach(IMyTextSurface AirlockDisplay in AirlockDisplays)
+                {
+                    DrawDisplayUI(AirlockDisplay);
+                }
+            }
+            }//Ends WriteAirlockDisplays
 
-                TextHeight = textSize.Y;
-                float Padding = 12f;
-                float LineCenterX = ViewPortOffset.X + (CanvasSize.X / 2f);
-                float BoxWidth = 5f;
-                float StartY = ViewPortOffset.Y + Padding; // begin at padding
+        public void VerifyDisplays()
+        {
+            //Actual IMyTextSurfaces
+            AirlockDisplays.Clear();
+            AirlockDisplaysProvided = false;
+            int NumberOfDisplays = 0;
+
+            //Check for screens on Button Panels
+            if (AirlockButtonPanels.Count > 0)
+            {
+                foreach (IMyButtonPanel ButtonPanel in AirlockButtonPanels)
+                {
+                    //Create screen variable using surfaceprovider to interact with later
+                    IMyTextSurfaceProvider SurfaceProvider = ButtonPanel as IMyTextSurfaceProvider;
+                    bool ButtonPanelHasScreens = (SurfaceProvider.SurfaceCount > 0);
+
+                    //If button panel doesnt have a screen, then exit method
+                    if (ButtonPanelHasScreens)
+                    {
+                        AirlockDisplays.Add(SurfaceProvider.GetSurface(0));
+                        NumberOfDisplays++;
+                    }
+                }
+            }
+
+            if (NumberOfDisplays > 0)
+            {
+                AirlockDisplaysProvided = true;
+            }
+        }//Ends VerifyDisplays
+
+        public void DrawDisplayUI(IMyTextSurface DisplayScreen) {
+            string AirlockTitle = $"{HardwareIdentifier} Airlock";
+
+            //Oxygen tank data
+            string OxygenTankTitle = "Oxygen Tank";
+            Color OxygenTankColor = (OxygenTankAttached) ? Color.White : CustomGrey;
+            Color OxygenTankFillBoxColor = Color.Red;
+            int NumberOfFillBoxes = 0;
+            if (OxygenTankAttached)
+            {
+                if (OxygenTankFillPercentage >= 75)
+                {
+                    NumberOfFillBoxes = 4;
+                    OxygenTankFillBoxColor = Color.Blue;
+                }
+                else if (OxygenTankFillPercentage >= 50)
+                {
+                    NumberOfFillBoxes = 3;
+                    OxygenTankFillBoxColor = Color.Green;
+                }
+                else if (OxygenTankFillPercentage >= 25)
+                {
+                    NumberOfFillBoxes = 2;
+                    OxygenTankFillBoxColor = Color.Yellow;
+                }
+                else if (OxygenTankFillPercentage > 0)
+                {
+                    NumberOfFillBoxes = 1;
+                    OxygenTankFillBoxColor = Color.Red;
+                }
+                else
+                {
+                    NumberOfFillBoxes = 0;
+
+                }
+            }
+
+            //Initial Setup of display
+            var Surface = DisplayScreen;
+            Surface.ScriptBackgroundColor = Color.Black;
+            Surface.ContentType = ContentType.SCRIPT;
+            Surface.Script = "";
+
+            //Display Variables
+            float FontScale = 0.7f;
+            Vector2 TextureSize = Surface.TextureSize;
+            Vector2 CanvasSize = Surface.SurfaceSize;
+            Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
+            Vector2 UsableSurfaceArea = new Vector2(CanvasSize.X - (Padding * 2f), CanvasSize.Y - (Padding * 2f));
+
+            //Get height of text as a float
+            Vector2 TextSize = Surface.MeasureStringInPixels(
+            new StringBuilder("TextHeightScaleText"),
+            "White",   // Font name
+            FontScale   // Font scale
+            );
+
+            TextHeight = TextSize.Y;
+
+            //Includes Padding and Viewportoffset
+            Vector2 TextStart = new Vector2((ViewPortOffset.X) + Padding, (ViewPortOffset.Y + Padding));
+            Vector2 AirlockTitleSize = GetTextSizeInformation(DisplayScreen, AirlockTitle, FontScale);
+            Vector2 AirlockTitlePosition = new Vector2(Padding + ViewPortOffset.X + (AirlockTitleSize.X / 2f), TextStart.Y);
+            
+            //Status Box and Text Data
+            Vector2 StatusTextSize = GetTextSizeInformation(DisplayScreen, AirlockStatus, FontScale);
+            Vector2 StatusTextPosition = new Vector2(TextStart.X + (StatusTextSize.X / 2f), TextStart.Y + TextHeight + Padding);
+            Vector2 StatusBoxPosition = new Vector2(ViewPortOffset.X + CanvasSize.X - Padding - StatusTextSize.Y, StatusTextPosition.Y + (StatusTextSize.Y / 2f));
+            Vector2 StatusBoxSize = new Vector2(StatusTextSize.Y, StatusTextSize.Y);
+
+            //Oxygen Sprite Data
+            Vector2 TitleBoxSize = new Vector2(ViewPortOffset.X + (Padding / 2f) + UsableSurfaceArea.X, TextHeight + Padding);
+            Vector2 TitleBoxPosition = new Vector2(ViewPortOffset.X + (Padding / 2f), ViewPortOffset.Y + Padding + (TextHeight / 2f));
+
+            //Oxygen Sprite Data
+            Vector2 OxygenTankTitleSize = GetTextSizeInformation(DisplayScreen, OxygenTankTitle, FontScale);
+            Vector2 OxygenTankTitlePosition = new Vector2(TextStart.X + (OxygenTankTitleSize.X / 2f), ViewPortOffset.Y + CanvasSize.Y - Padding - TextHeight);
+            Vector2 OxygenTankBoxPosition = new Vector2(TextStart.X + Padding + OxygenTankTitleSize.X, ViewPortOffset.Y + CanvasSize.Y - Padding - (TextHeight / 2f));
+            float OxygenTankBoxWith = UsableSurfaceArea.X - (OxygenTankTitleSize.X + Padding);
+            Vector2 OxygenTankBoxSize = new Vector2(OxygenTankBoxWith, TextHeight);
+
+            //Oxygen tank fill boxes data
+            float OxygenTankFillBoxWidth = (OxygenTankBoxWith - (3f * 5f)) / 4f;
+            Vector2 OxygenTankFillBoxSize = new Vector2(OxygenTankFillBoxWidth, OxygenTankBoxSize.Y);
+            Vector2 OxygenTankFillBoxPosition = new Vector2(OxygenTankBoxPosition.X, OxygenTankBoxPosition.Y);
+
+            using (var Frame = Surface.DrawFrame())
+            {
+
+                Frame.Add(new MySprite() //Title Box
+                {
+                    Type = SpriteType.TEXTURE,
+                    Data = "SquareSimple",
+                    Position = TitleBoxPosition,
+                    Size = TitleBoxSize,
+                    Color = Color.Blue
+                });
+
+                Frame.Add(new MySprite() // Airlock Title
+                {
+                    Type = SpriteType.TEXT,
+                    Data = AirlockTitle,
+                    Position = AirlockTitlePosition,
+                    RotationOrScale = FontScale,
+                    Alignment = TextAlignment.CENTER,
+                    Color = Color.White,
+                    FontId = "White"
+                });
+
+                Frame.Add(new MySprite() //Airlock Status Light Box
+                {
+                    Type = SpriteType.TEXTURE,
+                    Data = "SquareSimple",
+                    Position = StatusBoxPosition,
+                    Size = StatusBoxSize,
+                    Color = CurrentLightColor
+                });
+
+                Frame.Add(new MySprite() //Airlock Status Text
+                {
+                    Type = SpriteType.TEXT,
+                    Data = AirlockStatus,
+                    Position = StatusTextPosition,
+                    RotationOrScale = FontScale,
+                    Color = Color.White,
+                    Alignment = TextAlignment.CENTER,
+                    FontId = "White"
+                });
+
+                if (!OxygenTankAttached)
+                {
+                    Frame.Add(new MySprite() //Oxygen Tank Box
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Position = OxygenTankBoxPosition,
+                        Size = OxygenTankBoxSize,
+                        Color = CustomGrey
+                    });
+                }
+
+                Frame.Add(new MySprite() //Oxygen Tank Text
+                {
+                    Type = SpriteType.TEXT,
+                    Data = OxygenTankTitle,
+                    Position = OxygenTankTitlePosition,
+                    RotationOrScale = FontScale,
+                    Color = OxygenTankColor,
+                    Alignment = TextAlignment.CENTER,
+                    FontId = "White"
+                });
+
+                for (int i = 0; i < NumberOfFillBoxes; i++)
+                {
+                    Frame.Add(new MySprite() //Oxygen Tank Box
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Position = new Vector2(OxygenTankFillBoxPosition.X + (i * (5f + OxygenTankFillBoxWidth)), OxygenTankFillBoxPosition.Y),
+                        Size = OxygenTankFillBoxSize,
+                        Color = OxygenTankFillBoxColor
+                    });
+                }
             }
         }//Ends DrawUI
+
+        public Vector2 GetTextSizeInformation(IMyTextSurface Surface, string Text, float FontScale)
+        {
+            Vector2 TextSize = Surface.MeasureStringInPixels(
+            new StringBuilder(Text),
+            "White",   // Font name
+            FontScale   // Font scale
+            );
+
+            return TextSize;
+        }//Ends GetTextSizeInformation
 
         public void CheckForAtmosphere()
         {
@@ -391,7 +602,7 @@ namespace IngameScript
             string InteriorDoorIdentifier = HardwareIdentifier + " Interior";
 
             List<IMyDoor> AllDoors = new List<IMyDoor>();
-            GridTerminalSystem.GetBlocksOfType(AllDoors);
+            GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Me.CubeGrid);
 
             //Check for exterior doors, and add door to list if name contains identifier
             if (ExteriorDoorGroup.Count == 0)
@@ -432,7 +643,7 @@ namespace IngameScript
             {
                 Echo("Missing Airlock Air Vent");
                 List<IMyAirVent> AllVents = new List<IMyAirVent>();
-                GridTerminalSystem.GetBlocksOfType(AllVents);
+                GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Me.CubeGrid);
 
                 foreach (IMyAirVent Vent in AllVents)
                 {
