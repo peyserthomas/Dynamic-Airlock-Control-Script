@@ -731,7 +731,7 @@ namespace IngameScript
             string PBCustomData = ProgrammableBlock.CustomData.Trim();
             if (string.IsNullOrWhiteSpace(PBCustomData))
             {
-                Echo("Provide Identifying Tag(s)");
+                Echo("Provide Hardware Identifier(s)");
                 return false;
             }
 
