@@ -34,50 +34,90 @@ namespace IngameScript
         {
             //Reference back to the owning program for Echo
             Program Program;
-
-            public string HardwareIdentifier;
+        
+            //Non-changing variables
             float Padding = 12f;
+            float TextHeight;
 
-            bool InitialSetupComplete = false;
-            bool DoorsLocked = false;
-            bool GateMode = false;
-            bool InteriorMode = false;
-            bool AtmosphereCheck = false;
-            bool OxygenTankAttached = false;
-            bool OxygenTankFull = false;
+            string HardwareIdentifier;
             double OxygenTankFillPercentage = 0.0;
 
-            float TextHeight;
-            string AirlockStatus = "";
-            string GatePhase = "";
+            //Setup booleans
+            bool InitialSetupComplete = false;
+            bool HangarSetupComplete = false;
+            bool AirlockPressurized = false;
 
-            //Script Blocks
-            IMyAirVent AirlockAirVent; //Necessary Block
+            bool AirlockInteriorDoorsClosed = false;
+            bool AirlockExteriorDoorsClosed = false;
+            bool HangarDoorsLocked = false;
+            bool AACF = true; //Airlock Atmosphere Control Functionality
+            bool HACF = true; //Hangar Atmosphere Control Functionality
+            bool ACCF = true; //Airlock Cycling Control Functionality
+            bool HCCF = true; //Hangar Cycling Control Functionality
+            bool AtmosphereCheck = false;
+            bool OxygenTankFull = false;
+            bool AirlockCycleRequested = false;
+
+            string [] AirlockModeNames = {"Default", "Hangar", "Maintenance"};
+            string [] AtmosphereStatusNames = {"Pressurizing", "Pressurized", "Depressurizing", "Depressurized", "Working"};
+            string [] CyclingStatusNames = {"Interior", "Cycling", "Exterior"};
+            string [] ACFNames = {"Enabled", "Disabled"};
+            string [] CCFNames = {"Enabled", "Disabled"};
+
+            string AirlockModeName = "";
+            string AirlockAtmosphereStatusName = "";
+            string AirlockCyclingStatusName = "";
+            string AirlockTargetCyclingStatusName = "";
+            string HangarAtmosphereStatusName = "";
+            string HangarCyclingStatusName = "";
+
+            //Airlock blocks
+            IMyAirVent AirlockAirVent;
+
+            //Airlock block lists
+            List<IMyDoor> AirlockExteriorDoorGroup = new List<IMyDoor>();
+            List<IMyDoor> AirlockInteriorDoorGroup = new List<IMyDoor>();
+            List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
+
+            //Additional hardware blocks
             IMyGasTank PrimaryOxygenTank;
             IMyAirVent ExternalAirVent;
-            IMyAirVent GateAirVent;
 
-            //Block Lists
-            List<IMyDoor> ExteriorDoorGroup = new List<IMyDoor>();
-            List<IMyDoor> InteriorDoorGroup = new List<IMyDoor>();
-            List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
-            List<IMyDoor> GateGroup = new List<IMyDoor>();
+            //Additional hardware block lists
             List<IMyInteriorLight> AirlockStatusLightGroup = new List<IMyInteriorLight>();
             List<IMyTextSurface> AirlockDisplays = new List<IMyTextSurface>();
 
-            //Status Variables: 0 = Pressurizing, 1 = Pressurized, 2 = Depressurizing, 3 = Depressurized, 4 = Working
-            int LightStatusNumber = 4;
-            int AirlockStatusNumber = 4;
+            //Hangar blocks
+            IMyAirVent HangarAirVent;
+
+            //Hangar block lists
+            List<IMyInteriorLight> HangarStatusLightGroup = new List<IMyInteriorLight>();
+            List<IMyDoor> HangarDoorGroup = new List<IMyDoor>();
+
+            //Regular Airlock Cycles
+            //Status Variables: 0 = Pressurizing, 1 = Pressurized, 2 = Depressurizing, 3 = Depressurized, 4 = Working, 5 = ACF Disabled
+            int AirlockLightStatusNumber = 4;
+            int HangarLightStatusNumber = 4;
+            int AirlockAtmosphereStatusNumber = 4;
+            int HangarAtmosphereStatusNumber = 4;
+            int AirlockCyclingStatusNumber = 0;
+            int AirlockTargetCyclingStatusNumber = 0;
+            int HangarCyclingStatusNumber = 0;
+            int AirlockMode = 0; //0 = Default, 1 = Hangar Mode, 2 = Maintenance Mode
 
             //Light Data
             static readonly Color Red = new Color(255, 0, 0); //Depressurizing
-            static readonly Color Orange = new Color(255, 125, 0); //Working
+            static readonly Color Orange = new Color(255, 125, 0); //AFC Disabled
+            static readonly Color Yellow = new Color(255, 220, 0); //Working
             static readonly Color Green = new Color(0, 255, 0); //Pressurizing
             static readonly Color CustomGrey = new Color(50, 50, 50); //Custom Grey
-            Color CurrentLightColor;
-            static readonly float[] AirlockLightBlinkIntervals = { 1f, 0f, 1f, 0f, 0f };
-            static readonly float[] AirlockLightsBlinkLengths = { 50f, 0f, 50f, 0f, 0f };
-            static readonly float[] AirlockLightsBlinkOffsets = { 0f, 0f, 0f, 0f, 0f };
+            
+            static readonly float[] AirlockLightBlinkIntervals = {1f, 0f, 1f, 0f, 0f};
+            static readonly float[] AirlockLightsBlinkLengths = {50f, 0f, 50f, 0f, 0f};
+            static readonly float[] AirlockLightsBlinkOffsets = {0f, 0f, 0f, 0f, 0f};
+            
+            Color CurrentAirlockLightColor;
+            Color CurrentHangarLightColor;
 
             //Constructor
             public Airlock(Program program, string HardwareTag)
@@ -95,32 +135,234 @@ namespace IngameScript
             {
                 argument = argument.ToLower();
 
+                //If ACF false, no need to continue
                 if (argument == "cycle")
                 {
-                    //If Pressurized, start depressurization
-                    if (AirlockStatusNumber == 1)
-                    {
-                        AirlockStatus = "Depressurizing";
-                        AirlockStatusNumber = 2;
-                    }
-                    //If Depressurized, start pressurization
-                    else if (AirlockStatusNumber == 3)
-                    {
-                        AirlockStatus = "Pressurizing";
-                        AirlockStatusNumber = 0;
-                    }
+                    AirlockCycleRequested = true;
+                }
 
-                    LightStatusNumber = 4;
+                if (argument == "cyclehangar")
+                {
+                    if (HangarCyclingStatusNumber == 0 || HangarCyclingStatusNumber == 2)
+                    {
+                        HangarCyclingStatusNumber = 1;
+                        HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                    }
                 }
 
                 if (argument == "update")
                 {
                     AdditionalHardwareCheck();
                 }
+
+                if (argument == "toggle")
+                {
+                    UpdateAirlockMode();
+                }
             }//Ends ProcessArguments
+            public void ProcessCycling()
+            {
+                if (AirlockCycleRequested)
+                {
+                    //Before cycling, Target cycle should already match current cycle
+                    if (AirlockTargetCyclingStatusNumber == AirlockCyclingStatusNumber)
+                    {
+                        if (AirlockCyclingStatusNumber == 0) //Cycle to exterior
+                        {
+                            AirlockTargetCyclingStatusNumber = 2;
+                        }
+                        else if (AirlockCyclingStatusNumber == 2) //Cycle to interior
+                        {
+                            AirlockTargetCyclingStatusNumber = 0;
+                        }
+
+                        AirlockCyclingStatusNumber = 1; //Set current status to cycling
+                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                    }
+                    else
+                    {
+                        if (AirlockTargetCyclingStatusNumber == 0)
+                        {
+                            CycleInterior();
+                        }
+                        else if (AirlockTargetCyclingStatusNumber == 2)
+                        {
+                            CycleExterior();
+                        }
+                    }
+                }
+
+            }//Ends ProcessCycling
+
+            /*public void PressurizeHangar()
+            {
+                if (!HangarDoorsLocked)
+                {
+                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = false;
+                        }
+
+                        //Lock hangar doors when closed and pressurize
+                        HangarDoorsLocked = true;
+                        HangarAirVent.Depressurize = false;
+                    }
+                    else
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.ApplyAction("Open_Off");
+                        }
+                    }
+                        
+                }
+                else
+                {
+                    if (HangarAirVent.GetOxygenLevel() >= 0.98)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = true;
+                            Door.ApplyAction("Open_On");
+                        }
+
+                        //Once the hangar is pressurized, turn off ACF and set status
+                        AACF = false;
+                        AirlockStatusNumber = 5;
+                        AirlockStatus = StatusNames[AirlockStatusNumber];
+
+                        HangarStatusNumber = 1; //Pressurized
+                        HangarLightStatusNumber = 1; //Pressurized
+                        HangarStatus = StatusNames[HangarStatusNumber];
+                    }
+                }
+                
+            }//Ends PressurizeHangar
+            public void DepressurizeHangar()
+            {
+                if (HangarDoorsLocked)
+                {
+                    if (AirlockStatusNumber == 1)
+                    {
+                        HangarAirVent.Depressurize = true;
+                    }
+                    else
+                    {
+                        HangarDoorsLocked = false;
+                    }
+
+                    if (HangarAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                    {
+
+                    }
+                    //Close doors first, then check if they are closed
+                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = false;
+                        }
+                        //Start Depressurization
+                        
+                    }
+                    else
+                    {
+                        //Close All Doors, check if they are closed, then lock.
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.ApplyAction("Open_Off");
+                        }
+                    }
+                }
+                else
+                {
+                    if (HangarAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = true;
+                            Door.ApplyAction("Open_On");
+                        }
+
+                        if (AirlockExteriorDoorGroup[0].Status == DoorStatus.Open)
+                        {
+                            AirlockExteriorDoorsClosed = false;
+                            AirlockStatusNumber = 3; //Depressurized
+                            AirlockLightStatusNumber = 3; //Depressurized
+                            AirlockStatus = StatusNames[AirlockStatusNumber];
+                        }
+                    }
+                }
+                //stop here
+                HangarLightStatusNumber = 0;
+
+                if (HangarDoorsLocked)
+                {
+                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = false;
+                        }
+
+                        HangarDoorsLocked = true;
+                        HangarAirVent.Depressurize = false;
+                    }
+                    else
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.ApplyAction("Open_Off");
+                        }
+                    }
+
+                }
+                else
+                {
+                    if (HangarAirVent.GetOxygenLevel() >= 0.98)
+                    {
+                        foreach (IMyDoor Door in HangarDoorGroup)
+                        {
+                            Door.Enabled = true;
+                            Door.ApplyAction("Open_On");
+                        }
+
+                        AACF = true;
+                        HangarStatusNumber = 1; //Pressurized
+                        HangarLightStatusNumber = 1; //Pressurized
+                        HangarStatus = StatusNames[HangarStatusNumber];
+                    }
+                }
+                HangarLightStatusNumber = 2;
+            }//Ends PressurizeHangar*/
+
+            public void UpdateAirlockMode()
+            {
+                //Increment mode, if greater than 2, reset to 0
+                AirlockMode++;
+                AirlockMode = (AirlockMode > 2) ? 0 : AirlockMode;
+                AirlockModeName = AirlockModeNames[AirlockMode];
+
+                AirlockModeManager();
+            }//Ends UpdateAirlockMode
+
+            public void AirlockModeManager()
+            {
+                if (AirlockMode == 2)
+                {
+                    
+                }
+            }//Ends AirlockModeManager
 
             public void CheckOxygenTankFillLevel()
             {
+                if (PrimaryOxygenTank == null)
+                {
+                    return;
+                }
+
                 //Retrieve fill ration (0.0 to 1.0), then convert to percentage for comparison
                 double OxygenTankFillRatio = PrimaryOxygenTank.FilledRatio;
                 OxygenTankFillPercentage = OxygenTankFillRatio * 100;
@@ -130,18 +372,24 @@ namespace IngameScript
 
             public void UpdateAirlockInformation()
             {
-                //Oxygen tank information
-                if (OxygenTankAttached)
-                {
-                    //Check if Oxygen tank is full
-                    CheckOxygenTankFillLevel();
-                }
+                //Check if Oxygen tank fill level
+                CheckOxygenTankFillLevel();
+                CheckForExternalAtmosphere();
             }//Ends UpdateAirlockInformation
 
-            public void AirlockLightManager()
+            public void UpdateLights()
             {
+                AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
 
-                Color[] LightColors = { Orange, Green, Red, Red, Orange };
+                if (AirlockMode == 1)
+                {
+                    AirlockLightManager(HangarStatusLightGroup, HangarLightStatusNumber, CurrentHangarLightColor);
+                }
+            }//Ends UpdateLights
+
+            public void AirlockLightManager(List<IMyInteriorLight> LightGroup, int LightStatusNumber, Color CurrentLightColor)
+            {
+                Color[] LightColors = {Yellow, Green, Red, Red, Orange, Orange};
 
                 //Use status number to retrieve light data
                 CurrentLightColor = LightColors[LightStatusNumber];
@@ -149,7 +397,7 @@ namespace IngameScript
                 float CurrentBlinkLength = AirlockLightsBlinkLengths[LightStatusNumber];
                 float CurrentBlinkOffset = AirlockLightsBlinkOffsets[LightStatusNumber];
 
-                if (AirlockStatusLightGroup.Count == 0)
+                if (LightGroup.Count == 0)
                 {
                     return;
                 }
@@ -164,11 +412,105 @@ namespace IngameScript
                 }
             }//Ends AirlockLightManager
 
+            public void HangarInitialHardwareCheck()
+            {
+                int InitializedBlockCount = 0;
+                HangarDoorGroup.Clear();
+                HangarAirVent = null;
+
+                string HangarDoorIdentifier = HardwareIdentifier + " Hangar";
+                string HangarAirVentIdentifier = HardwareIdentifier + "Hangar Air Vent";
+
+                //Check for Hangar Doors
+                GetDoors(HangarDoorIdentifier, HangarDoorGroup);
+                if (HangarDoorGroup.Count == 0)
+                {
+                    Program.Echo($"Missing {HardwareIdentifier} Hangar Door(s)");
+                }
+                else
+                {
+                    InitializedBlockCount++;
+                }
+
+                //Check for Hangar vent
+                HangarAirVent = GetVent(HangarAirVentIdentifier);
+                if (HangarAirVent == null)
+                {
+                    Program.Echo($"Missing {HardwareIdentifier} Airlock Air Vent");
+                }
+                else
+                {
+                    InitializedBlockCount++;
+                }
+
+                /*HangarSetupComplete = (InitializedBlockCount == 2) ? true : false;
+                if (HangarSetupComplete)
+                {
+                    if (HangarAirVent.GetOxygenLevel() >= 0.95)
+                    {
+                        HangarStatusNumber = 0; //Pressuring to begin
+                        PressurizeHangar();
+                    }
+                    else
+                    {
+                        HangarStatusNumber = 2; //Depressurized to begin
+                        DepressurizeHangar();
+                    }
+
+                    //Update Lights
+                    AirlockLightManager(HangarStatusLightGroup, HangarLightStatusNumber, CurrentHangarLightColor);
+                }*/
+
+            }//Ends HangarHardwareCheck
+
+            public IMyAirVent GetVent(string AirVentIdentifier)
+            {
+                IMyAirVent SearchedVent = null;
+
+                List<IMyAirVent> AllVents = new List<IMyAirVent>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Program.Me.CubeGrid);
+
+                foreach (IMyAirVent Vent in AllVents)
+                {
+                    string VentName = Vent.CustomName.ToLower();
+                    if (VentName.Contains(AirVentIdentifier.ToLower()))
+                    {
+                        SearchedVent = Vent;
+                    }
+                }
+
+                return SearchedVent;
+            }//Ends GetVent
+
+            public void GetDoors(string DoorHardwareIdentifier, List<IMyDoor> DoorList)
+            {
+                List<IMyDoor> AllDoors = new List<IMyDoor>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Program.Me.CubeGrid);
+
+                //Check for exterior doors, and add door to list if name contains identifier
+                foreach (IMyDoor Door in AllDoors)
+                {
+                    //Ensure both the name and identifier are lowercase for comparison
+                    string DoorName = Door.CustomName.ToLower();
+                    if (DoorName.Contains(DoorHardwareIdentifier.ToLower()))
+                    {
+                        DoorList.Add(Door);
+                    }
+                }
+            }//Ends GetDoor
+
             public void AdditionalHardwareCheck()
             {
                 AirlockStatusLightGroup.Clear();
                 AirlockDisplays.Clear();
                 PrimaryOxygenTank = null;
+                ExternalAirVent = null;
+
+                ExternalAirVent = GetVent("External Air Vent");
+                if (ExternalAirVent == null)
+                {
+                    Program.Echo($"Missing {HardwareIdentifier} External Air Vent");
+                }
 
                 //Check for primary oxygen tank
                 List<IMyGasTank> AllGasTanks = new List<IMyGasTank>();
@@ -210,8 +552,6 @@ namespace IngameScript
                     }
                 }
 
-                OxygenTankAttached = (PrimaryOxygenTank != null);
-
                 //Check for button panel screens
                 List<IMyButtonPanel> AllButtonPanels = new List<IMyButtonPanel>();
                 Program.GridTerminalSystem.GetBlocksOfType(AllButtonPanels, ButtonPanel => ButtonPanel.CubeGrid == Program.Me.CubeGrid);
@@ -231,7 +571,6 @@ namespace IngameScript
 
             }//Ends AdditionalHardwareCheck
 
-
             public void WriteAirlockDisplays()
             {
                     foreach (IMyTextSurface AirlockDisplay in AirlockDisplays)
@@ -246,10 +585,10 @@ namespace IngameScript
 
                 //Oxygen tank data
                 string OxygenTankTitle = "Oxygen Tank";
-                Color OxygenTankColor = (OxygenTankAttached) ? Color.White : CustomGrey;
+                Color OxygenTankColor = (PrimaryOxygenTank != null) ? Color.White : CustomGrey;
                 Color OxygenTankFillBoxColor = Color.Red;
                 int NumberOfFillBoxes = 0;
-                if (OxygenTankAttached)
+                if (PrimaryOxygenTank != null)
                 {
                     if (OxygenTankFillPercentage >= 75)
                     {
@@ -266,7 +605,7 @@ namespace IngameScript
                         NumberOfFillBoxes = 2;
                         OxygenTankFillBoxColor = Color.Yellow;
                     }
-                    else if (OxygenTankFillPercentage > 0)
+                    else if (OxygenTankFillPercentage > 1)
                     {
                         NumberOfFillBoxes = 1;
                         OxygenTankFillBoxColor = Color.Red;
@@ -306,7 +645,7 @@ namespace IngameScript
                 Vector2 AirlockTitlePosition = new Vector2(Padding + ViewPortOffset.X + (AirlockTitleSize.X / 2f), TextStart.Y);
 
                 //Status Box and Text Data
-                Vector2 StatusTextSize = GetTextSizeInformation(DisplayScreen, AirlockStatus, FontScale);
+                Vector2 StatusTextSize = GetTextSizeInformation(DisplayScreen, AirlockAtmosphereStatusName, FontScale);
                 Vector2 StatusTextPosition = new Vector2(TextStart.X + (StatusTextSize.X / 2f), TextStart.Y + TextHeight + Padding);
                 Vector2 StatusBoxPosition = new Vector2(ViewPortOffset.X + CanvasSize.X - Padding - StatusTextSize.Y, StatusTextPosition.Y + (StatusTextSize.Y / 2f));
                 Vector2 StatusBoxSize = new Vector2(StatusTextSize.Y, StatusTextSize.Y);
@@ -356,13 +695,13 @@ namespace IngameScript
                         Data = "SquareSimple",
                         Position = StatusBoxPosition,
                         Size = StatusBoxSize,
-                        Color = CurrentLightColor
+                        Color = CurrentAirlockLightColor
                     });
 
                     Frame.Add(new MySprite() //Airlock Status Text
                     {
                         Type = SpriteType.TEXT,
-                        Data = AirlockStatus,
+                        Data = AirlockAtmosphereStatusName,
                         Position = StatusTextPosition,
                         RotationOrScale = FontScale,
                         Color = Color.White,
@@ -370,7 +709,7 @@ namespace IngameScript
                         FontId = "White"
                     });
 
-                    if (!OxygenTankAttached)
+                    if (PrimaryOxygenTank == null)
                     {
                         Frame.Add(new MySprite() //Oxygen Tank Box
                         {
@@ -418,51 +757,71 @@ namespace IngameScript
                 return TextSize;
             }//Ends GetTextSizeInformation
 
-            public void CheckForAtmosphere()
+            public void CheckForExternalAtmosphere()
             {
                 if (ExternalAirVent == null)
                 {
                     return;
                 }
 
-                //0.2f to reduce false positives
-                float ExteriorOxygenLevel = ExternalAirVent.GetOxygenLevel();
-                AtmosphereCheck = (ExteriorOxygenLevel >= 0.20f) ? true : false;
+                //0.8f to reduce false positives
+                float ExternalOxygenLevel = ExternalAirVent.GetOxygenLevel();
+                AtmosphereCheck = (ExternalOxygenLevel >= 0.80f) ? true : false;
             }//Ends CheckForAtmosphere
 
-            public void AirlockCycling()
-            {
-                if (AirlockStatusNumber == 0) //Pressurizing
-                {
-                    PressurizeAirlock();
-                }
-                else if (AirlockStatusNumber == 2) //Depressurizing
-                {
-                    DepressurizeAirlock();
-                }
-
-            }//Ends AirlockCycling
+            //ProcessCycling should only carry out pressurization/depressurization
 
             public void PressurizeAirlock()
             {
-                //Set status outside of door logic, in case doors are already closed
-                LightStatusNumber = 0; //Pressurizing
+                //Pressurizing
+                AirlockAtmosphereStatusNumber = 0;
+                AirlockLightStatusNumber = 0;
+                AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                AirlockAirVent.Depressurize = false;
 
-                if (!DoorsLocked)
+                if (AirlockAirVent.GetOxygenLevel() >= 0.98)
+                {
+                    AirlockAtmosphereStatusNumber = 1; //Pressurized
+                    AirlockLightStatusNumber = 1; //Pressurized
+                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                    AirlockPressurized = true;
+                }
+            }//Ends PressurizeAirlock
+
+            public void DepressurizeAirlock()
+            {
+                //Depressurizing
+                AirlockAtmosphereStatusNumber = 2;
+                AirlockLightStatusNumber = 2;
+                AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                AirlockAirVent.Depressurize = true;
+
+
+                if (AirlockAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                {
+                    AirlockAtmosphereStatusNumber = 3; //Depressurized
+                    AirlockLightStatusNumber = 3; //Depressurized
+                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                    AirlockPressurized = false;
+                }
+            }//Ends DepressurizeAirlock
+
+            public void CycleInterior()
+            {
+                if (!AirlockExteriorDoorsClosed)
                 {
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (ExteriorDoorGroup[0].Status == DoorStatus.Closed)
+                    if (AirlockExteriorDoorGroup[0].Status == DoorStatus.Closed)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
                             Door.Enabled = false;
                         }
 
-                        //Start Pressurization
-                        DoorsLocked = true;
-                        AirlockAirVent.Depressurize = false;
+                        AirlockExteriorDoorsClosed = true;
+                        AirlockInteriorDoorsClosed = true;
                     }
                     else
                     {
@@ -472,117 +831,129 @@ namespace IngameScript
                             Door.ApplyAction("Open_Off");
                         }
                     }
-                    //Outside of door logic, in case doors are already closed
-
                 }
                 else
                 {
-                    if (AirlockAirVent.GetOxygenLevel() >= 0.98)
+                    if (AirlockInteriorDoorsClosed)
                     {
-                        foreach (IMyDoor Door in InteriorDoorGroup)
+                        //If no external atmosphere, pressurize airlock
+                        if (AACF)
                         {
-                            Door.Enabled = true;
-                            Door.ApplyAction("Open_On");
-                        }
+                            PressurizeAirlock();
 
-                        DoorsLocked = false;
-                        AirlockStatusNumber = 1; //Pressurized
-                        LightStatusNumber = 1; //Pressurized
-                        AirlockStatus = "Pressurized";
+                            if (AirlockPressurized)
+                            {
+                                AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoorGroup);
+                            }
+                        }
+                        else
+                        {
+                            AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoorGroup);
+                        }
+                    }
+                    else
+                    {
+                        AirlockCycleRequested = false;
+                        AirlockCyclingStatusNumber = 0;
+                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                     }
                 }
-            }//Ends PressurizeAirlock
+            }//Ends CycleInterior
 
-            public void DepressurizeAirlock()
+            public void CycleExterior()
             {
-                //Outside of door logic, in case doors are already closed
-                LightStatusNumber = 2; //Depressurizing
-
-                if (!DoorsLocked)
+                if (!AirlockInteriorDoorsClosed)
                 {
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
-                    //Check Interior doors as the Exterior doors will be closed already
-                    if (InteriorDoorGroup[0].Status == DoorStatus.Closed)
+                    //Check exterior doors as the interior doors will be closed already
+                    if (AirlockInteriorDoorGroup[0].Status == DoorStatus.Closed)
                     {
-                        foreach (IMyDoor door in AllAirlockDoors)
+                        foreach (IMyDoor Door in AllAirlockDoors)
                         {
-                            door.Enabled = false;
+                            Door.Enabled = false;
                         }
-                        //Start Depressurization
-                        DoorsLocked = true;
-                        AirlockAirVent.Depressurize = true;
+
+                        AirlockInteriorDoorsClosed = true;
+                        AirlockExteriorDoorsClosed = true;
                     }
                     else
                     {
                         //Close All Doors, check if they are closed, then lock.
-                        foreach (IMyDoor door in AllAirlockDoors)
+                        foreach (IMyDoor Door in AllAirlockDoors)
                         {
-                            door.ApplyAction("Open_Off");
+                            Door.ApplyAction("Open_Off");
                         }
                     }
                 }
                 else
                 {
-                    if (AirlockAirVent.GetOxygenLevel() <= 0.01 || OxygenTankFull)
+                    if (AirlockExteriorDoorsClosed)
                     {
-                        foreach (IMyDoor Door in ExteriorDoorGroup)
+                        //If no external atmosphere, depressurize airlock
+                        if (AACF)
                         {
-                            Door.Enabled = true;
-                            Door.ApplyAction("Open_On");
-                        }
+                            DepressurizeAirlock();
 
-                        if (ExteriorDoorGroup[0].Status == DoorStatus.Open)
+                            if (!AirlockPressurized)
+                            {
+                                AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoorGroup);
+                            }
+
+                        }
+                        else
                         {
-                            DoorsLocked = false;
-                            AirlockStatusNumber = 3; //Depressurized
-                            LightStatusNumber = 3; //Depressurized
-                            AirlockStatus = "Depressurized";
+                            AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoorGroup);
                         }
                     }
+                    else
+                    {
+                        //Once doors are closed and airlock is depressurized, complete cycle.
+                        AirlockCycleRequested = false;
+                        AirlockCyclingStatusNumber = 2;
+                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                    }
                 }
-            }//Ends DepressurizeAirlock
+            }//Ends CycleExterior
+
+            public bool OpenDoors(List<IMyDoor> DoorGroup)
+            {
+                foreach (IMyDoor Door in DoorGroup)
+                {
+                    Door.Enabled = true;
+                    Door.ApplyAction("Open_On");
+                }
+
+                return false;
+            }//Ends OpenDoors
 
             public void InitialHardwareSetup()
             {
                 int InitializedBlockCount = 0;
 
-                string AirlockVentIdentifier = HardwareIdentifier + " Air Vent";
-                string ExteriorDoorIdentifier = HardwareIdentifier + " Exterior";
-                string InteriorDoorIdentifier = HardwareIdentifier + " Interior";
+                string AirlockVentIdentifier = $"{HardwareIdentifier} Air Vent";
+                string ExteriorDoorIdentifier = $"{ HardwareIdentifier} Exterior";
+                string InteriorDoorIdentifier = $"{ HardwareIdentifier} Interior";
 
-                List<IMyDoor> AllDoors = new List<IMyDoor>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Program.Me.CubeGrid);
+                AirlockExteriorDoorGroup.Clear();
+                AirlockInteriorDoorGroup.Clear();
 
-                //Check for exterior doors, and add door to list if name contains identifier
-                if (ExteriorDoorGroup.Count == 0)
+                //Check for exterior door(s)
+                GetDoors(ExteriorDoorIdentifier, AirlockExteriorDoorGroup);
+                if (AirlockExteriorDoorGroup.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
-                    foreach (IMyDoor Door in AllDoors)
-                    {
-                        //Ensure both the name and identifier are lowercase for comparison
-                        string DoorName = Door.CustomName.ToLower();
-                        if (DoorName.Contains(ExteriorDoorIdentifier.ToLower()))
-                        {
-                            ExteriorDoorGroup.Add(Door);
-                        }
-                    }
                 }
                 else
                 {
                     InitializedBlockCount++;
                 }
-                if (InteriorDoorGroup.Count == 0)
+
+                //Check for interior door(s)
+                GetDoors(InteriorDoorIdentifier, AirlockInteriorDoorGroup);
+                if (AirlockInteriorDoorGroup.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
-                    foreach (IMyDoor Door in AllDoors)
-                    {
-                        string DoorName = Door.CustomName.ToLower();
-                        if (DoorName.Contains(InteriorDoorIdentifier.ToLower()))
-                        {
-                            InteriorDoorGroup.Add(Door);
-                        }
-                    }
                 }
                 else
                 {
@@ -590,20 +961,10 @@ namespace IngameScript
                 }
 
                 //Check for necessary air vent
+                AirlockAirVent = GetVent(AirlockVentIdentifier);
                 if (AirlockAirVent == null)
                 {
                     Program.Echo($"Missing {HardwareIdentifier} Airlock Air Vent");
-                    List<IMyAirVent> AllVents = new List<IMyAirVent>();
-                    Program.GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Program.Me.CubeGrid);
-
-                    foreach (IMyAirVent Vent in AllVents)
-                    {
-                        string VentName = Vent.CustomName.ToLower();
-                        if (VentName.Contains(AirlockVentIdentifier.ToLower()))
-                        {
-                            AirlockAirVent = Vent;
-                        }
-                    }
                 }
                 else
                 {
@@ -612,27 +973,32 @@ namespace IngameScript
 
                 bool InitializationSuccess = (InitializedBlockCount == 3) ? true : false;
                 InitialSetupComplete = InitializationSuccess;
+
                 //Initial Setup once necessary blocks are assigned
                 if (InitializationSuccess)
                 {
-                    AllAirlockDoors.AddRange(ExteriorDoorGroup);
-                    AllAirlockDoors.AddRange(InteriorDoorGroup);
+                    AllAirlockDoors.AddRange(AirlockExteriorDoorGroup);
+                    AllAirlockDoors.AddRange(AirlockInteriorDoorGroup);
                     //Check for additional hardware one time after initialization
                     AdditionalHardwareCheck();
                     UpdateAirlockInformation();
 
+                    //Cycle Initially.
+                    AirlockCycleRequested = true;
+
                     if (AirlockAirVent.GetOxygenLevel() >= 0.95)
                     {
-                        AirlockStatusNumber = 0; //Pressuring to begin
-                        PressurizeAirlock();
+                        AirlockTargetCyclingStatusNumber = 0; //Interior to begin
+                        CycleInterior();
                     }
                     else
                     {
-                        AirlockStatusNumber = 2; //Depressurized to begin
-                        DepressurizeAirlock();
+                        AirlockTargetCyclingStatusNumber = 2; //Exterior to begin
+                        CycleExterior();
                     }
 
-                    AirlockLightManager(); //Update Lights
+                    //Update Lights
+                    AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
                 }
 
             }//Ends InitialBlockSetup
@@ -643,7 +1009,6 @@ namespace IngameScript
             } //Ends GetHardwareIdentifier
 
         }// Ends Airlock Class
-
 
         // Airlocks object list
         List<Airlock> Airlocks = new List<Airlock>();
@@ -691,15 +1056,12 @@ namespace IngameScript
                 }
 
                 Airlock.UpdateAirlockInformation();
-                Airlock.AirlockCycling();
-                Airlock.AirlockLightManager();
-                Airlock.CheckForAtmosphere();
+                Airlock.ProcessCycling();
+                Airlock.UpdateLights();
                 Airlock.WriteAirlockDisplays();
             }
 
             DistributeArguments(argument);
-
-
         }//Ends Main
 
         public void DistributeArguments(string Argument)
