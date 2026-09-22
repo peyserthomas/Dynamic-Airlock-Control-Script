@@ -34,7 +34,12 @@ namespace IngameScript
         {
             //Reference back to the owning program for Echo
             Program Program;
-        
+
+            //Animation Variable
+            bool AnimationComplete = false;
+            int tickCounter = 0;
+            const int TOTAL_TICKS = 600; //5 seconds at 60 FPS
+
             //Non-changing variables
             float Padding = 12f;
             float TextHeight;
@@ -379,9 +384,12 @@ namespace IngameScript
 
             public void UpdateLights()
             {
+                Color[] LightColors = { Yellow, Green, Red, Red, Orange, Orange };
+                CurrentAirlockLightColor = LightColors[AirlockLightStatusNumber];
+                CurrentHangarLightColor = LightColors[HangarLightStatusNumber];
                 AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
 
-                if (AirlockMode == 1)
+                if (AirlockMode == 1) 
                 {
                     AirlockLightManager(HangarStatusLightGroup, HangarLightStatusNumber, CurrentHangarLightColor);
                 }
@@ -389,10 +397,7 @@ namespace IngameScript
 
             public void AirlockLightManager(List<IMyInteriorLight> LightGroup, int LightStatusNumber, Color CurrentLightColor)
             {
-                Color[] LightColors = {Yellow, Green, Red, Red, Orange, Orange};
-
                 //Use status number to retrieve light data
-                CurrentLightColor = LightColors[LightStatusNumber];
                 float CurrentBlinkTime = AirlockLightBlinkIntervals[LightStatusNumber];
                 float CurrentBlinkLength = AirlockLightsBlinkLengths[LightStatusNumber];
                 float CurrentBlinkOffset = AirlockLightsBlinkOffsets[LightStatusNumber];
@@ -581,6 +586,13 @@ namespace IngameScript
 
             public void DrawDisplayUI(IMyTextSurface DisplayScreen)
             {
+                //Keep playing animation until complete.
+                if (!AnimationComplete)
+                {
+                    AnimationComplete = LoadAnimation(DisplayScreen);
+                    return;
+                }
+
                 string AirlockTitle = $"{HardwareIdentifier} Airlock";
 
                 //Oxygen tank data
@@ -689,7 +701,7 @@ namespace IngameScript
                         FontId = "White"
                     });
 
-                    Frame.Add(new MySprite() //Airlock Status Light Box
+                    Frame.Add(new MySprite() //Airlock Atmosphere Status Light Box
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "SquareSimple",
@@ -825,9 +837,11 @@ namespace IngameScript
                     }
                     else
                     {
+
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
+                            Door.Enabled = true;
                             Door.ApplyAction("Open_Off");
                         }
                     }
@@ -882,6 +896,7 @@ namespace IngameScript
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
+                            Door.Enabled = true;
                             Door.ApplyAction("Open_Off");
                         }
                     }
@@ -926,6 +941,33 @@ namespace IngameScript
 
                 return false;
             }//Ends OpenDoors
+            public bool LoadAnimation(IMyTextSurface DisplayScreen)
+            {
+                var Surface = DisplayScreen;
+
+                using (var frame = Surface.DrawFrame())
+                {
+                    var sprite = new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "Triangle",
+                        Position = Surface.TextureSize / 2f,
+                        Size = new Vector2(100, 100),
+                        Color = Color.Red,
+                        RotationOrScale = (float)Math.PI
+                    };
+                    frame.Add(sprite);
+                }
+
+                //Increment 10, as the script is Update10
+                tickCounter += 10;
+                if (tickCounter >= TOTAL_TICKS)
+                {
+                    return true; //Animation Complete
+                }
+
+                return false;
+            }//Ends LoadAnimation
 
             public void InitialHardwareSetup()
             {
