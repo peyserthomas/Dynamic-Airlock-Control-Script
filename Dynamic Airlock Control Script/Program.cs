@@ -52,16 +52,17 @@ namespace IngameScript
             bool HangarSetupComplete = false;
             bool AirlockPressurized = false;
 
+            bool AirlockCycleRequested = false;
             bool AirlockInteriorDoorsClosed = false;
             bool AirlockExteriorDoorsClosed = false;
-            bool HangarDoorsLocked = false;
+            bool HangarDoorsClosed = false;
             bool AACF = true; //Airlock Atmosphere Control Functionality
             bool HACF = true; //Hangar Atmosphere Control Functionality
             bool ACCF = true; //Airlock Cycling Control Functionality
             bool HCCF = true; //Hangar Cycling Control Functionality
             bool AtmosphereCheck = false;
             bool OxygenTankFull = false;
-            bool AirlockCycleRequested = false;
+            bool DisplaysProvided = false;
 
             string [] AirlockModeNames = {"Default", "Hangar", "Maintenance"};
             string [] AtmosphereStatusNames = {"Pressurizing", "Pressurized", "Depressurizing", "Depressurized", "Working"};
@@ -380,6 +381,9 @@ namespace IngameScript
                 //Check if Oxygen tank fill level
                 CheckOxygenTankFillLevel();
                 CheckForExternalAtmosphere();
+
+                DisplaysProvided = (AirlockDisplays.Count > 0) ? true : false;
+
             }//Ends UpdateAirlockInformation
 
             public void UpdateLights()
@@ -578,16 +582,19 @@ namespace IngameScript
 
             public void WriteAirlockDisplays()
             {
+                if (DisplaysProvided)
+                {
                     foreach (IMyTextSurface AirlockDisplay in AirlockDisplays)
                     {
                         DrawDisplayUI(AirlockDisplay);
                     }
+                }
             }//Ends WriteAirlockDisplays
 
             public void DrawDisplayUI(IMyTextSurface DisplayScreen)
             {
                 //Keep playing animation until complete.
-                if (!AnimationComplete)
+                if (!AnimationComplete && DisplaysProvided)
                 {
                     AnimationComplete = LoadAnimation(DisplayScreen);
                     return;
