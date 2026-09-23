@@ -922,7 +922,7 @@ namespace IngameScript
                         }
 
                         //Make sure doors are on to close them
-                        foreach (IMyDoor Door in AirlockInteriorDoors)
+                        foreach (IMyDoor Door in InteriorAirlockDoors)
                         {
                             Door.Enabled = true;
                         }
