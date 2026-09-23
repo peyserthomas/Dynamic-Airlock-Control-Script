@@ -81,8 +81,8 @@ namespace IngameScript
             IMyAirVent AirlockAirVent;
 
             //Airlock block lists
-            List<IMyDoor> AirlockExteriorDoors = new List<IMyDoor>();
-            List<IMyDoor> AirlockInteriorDoors = new List<IMyDoor>();
+            List<IMyDoor> ExteriorAirlockDoors = new List<IMyDoor>();
+            List<IMyDoor> InteriorAirlockDoors = new List<IMyDoor>();
             List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
 
             //Additional hardware blocks
@@ -189,7 +189,7 @@ namespace IngameScript
                     {
                         if (AirlockTargetCyclingStatusNumber == 0)
                         {
-                            CycleInterior();
+                            CycleAirlockInterior();
                         }
                         else if (AirlockTargetCyclingStatusNumber == 2)
                         {
@@ -292,7 +292,7 @@ namespace IngameScript
                             Door.ApplyAction("Open_On");
                         }
 
-                        if (AirlockExteriorDoors[0].Status == DoorStatus.Open)
+                        if (ExteriorAirlockDoors[0].Status == DoorStatus.Open)
                         {
                             AirlockExteriorDoorsClosed = false;
                             AirlockStatusNumber = 3; //Depressurized
@@ -343,6 +343,11 @@ namespace IngameScript
                 }
                 HangarLightStatusNumber = 2;
             }//Ends PressurizeHangar*/
+
+            public void VeryifyAirlockSeal()
+            {
+
+            }//Ends VerifyAirlockSeal
 
             public void UpdateAirlockMode()
             {
@@ -596,7 +601,7 @@ namespace IngameScript
                 //Keep playing animation until complete.
                 if (!AnimationComplete && DisplaysProvided)
                 {
-                    AnimationComplete = LoadAnimation(DisplayScreen);
+                    AnimationComplete = LoadRedFoxAnimation(DisplayScreen);
                     return;
                 }
 
@@ -825,14 +830,14 @@ namespace IngameScript
                 }
             }//Ends DepressurizeAirlock
 
-            public void CycleInterior()
+            public void CycleAirlockInterior()
             {
                 if (!AirlockExteriorDoorsClosed)
                 {
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (AirlockExteriorDoors[0].Status == DoorStatus.Closed)
+                    if (ExteriorAirlockDoors[0].Status == DoorStatus.Closed)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -844,18 +849,17 @@ namespace IngameScript
                     }
                     else
                     {
+                        //Ensure doors are on to close them.
+                        foreach (IMyDoor Door in ExteriorAirlockDoors)
+                        {
+                            Door.Enabled = true;
+                        }
 
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
                             Door.ApplyAction("Open_Off");
-                        }
-
-                        //Make sure doors are on to close them
-                        foreach (IMyDoor Door in AirlockExteriorDoors)
-                        {
-                            Door.Enabled = true;
-                        }
+                        }                        
                     }
                 }
                 else
@@ -869,12 +873,12 @@ namespace IngameScript
 
                             if (AirlockPressurized)
                             {
-                                AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoors);
+                                AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
                             }
                         }
                         else
                         {
-                            AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoors);
+                            AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
                         }
                     }
                     else
@@ -884,7 +888,7 @@ namespace IngameScript
                         AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                     }
                 }
-            }//Ends CycleInterior
+            }//Ends CycleAirlockInterior
 
             public void CycleExterior()
             {
@@ -893,7 +897,7 @@ namespace IngameScript
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (AirlockInteriorDoors[0].Status == DoorStatus.Closed)
+                    if (InteriorAirlockDoors[0].Status == DoorStatus.Closed)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -905,6 +909,12 @@ namespace IngameScript
                     }
                     else
                     {
+                        //Ensure doors are on to close them.
+                        foreach (IMyDoor Door in InteriorAirlockDoors)
+                        {
+                            Door.Enabled = true;
+                        }
+
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -929,13 +939,13 @@ namespace IngameScript
 
                             if (!AirlockPressurized)
                             {
-                                AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoors);
+                                AirlockExteriorDoorsClosed = OpenDoors(ExteriorAirlockDoors);
                             }
 
                         }
                         else
                         {
-                            AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoors);
+                            AirlockExteriorDoorsClosed = OpenDoors(ExteriorAirlockDoors);
                         }
                     }
                     else
@@ -958,34 +968,59 @@ namespace IngameScript
 
                 return false;
             }//Ends OpenDoors
-            public bool LoadAnimation(IMyTextSurface DisplayScreen)
+            public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
                 var Surface = DisplayScreen;
+                Surface.ScriptBackgroundColor = Color.Black;
+                Surface.ContentType = ContentType.SCRIPT;
+                Surface.Script = "";
 
                 Vector2 TextureSize = Surface.TextureSize;
                 Vector2 CanvasSize = Surface.SurfaceSize;
-                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
+                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
 
-                Vector2 TriangleSize = new Vector2(CanvasSize.X * 0.75f, CanvasSize.Y * 0.75f);
-                Vector2 CenterPosition = new Vector2(ViewPortOffset.X + (CanvasSize.X / 2f), ViewPortOffset.Y + (TriangleSize.Y / 2f));
+                Vector2 TriangleSize = new Vector2(TextureSize.X * 0.75f, TextureSize.Y * 0.75f);
+                Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
 
-                Vector2 BoxPosition = new Vector2();
-                Vector2 BoxSize = new Vector2(CanvasSize.X, (TriangleSize.Y * 0.25f));
+                //Sprites 
+                Vector2 TrianglePosition = new Vector2(ViewPortOffset.X + (CanvasSize.X / 2f), ViewPortOffset.Y + (CanvasSize.Y / 2f));
+                Vector2 Box1Position = new Vector2(TrianglePosition.X, TrianglePosition.Y + BoxSize.Y + (BoxSize.Y / 2f));
+                Vector2 Box2Position = new Vector2(TrianglePosition.X, TrianglePosition.Y - (TriangleSize.Y / 2f) - (BoxSize.Y / 2f));
+
+                Vector2 TotalIconSize = new Vector2(TriangleSize.X, TriangleSize.Y + BoxSize.Y);
 
                 using (var frame = Surface.DrawFrame())
                 {
-                    var sprite = new MySprite()
+                    frame.Add(new MySprite()
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "Triangle",
-                        Position = CenterPosition,
+                        Position = TrianglePosition,
                         Size = TriangleSize,
                         Color = Color.Red,
-                        RotationOrScale = (float)Math.PI
-                    };
-                    frame.Add(sprite);
+                        RotationOrScale = (float)Math.PI,
+                        Alignment = TextAlignment.CENTER
+                    });
 
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Size = BoxSize,
+                        Position = Box1Position,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER
+                    });
 
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Size = BoxSize,
+                        Position = Box2Position,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER
+                    });
                 }
 
                 //Increment 10, as the script is Update10
@@ -1006,12 +1041,12 @@ namespace IngameScript
                 string ExteriorDoorIdentifier = $"{ HardwareIdentifier} Exterior";
                 string InteriorDoorIdentifier = $"{ HardwareIdentifier} Interior";
 
-                AirlockExteriorDoors.Clear();
-                AirlockInteriorDoors.Clear();
+                ExteriorAirlockDoors.Clear();
+                InteriorAirlockDoors.Clear();
 
                 //Check for exterior door(s)
-                GetDoors(ExteriorDoorIdentifier, AirlockExteriorDoors);
-                if (AirlockExteriorDoors.Count == 0)
+                GetDoors(ExteriorDoorIdentifier, ExteriorAirlockDoors);
+                if (ExteriorAirlockDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
                 }
@@ -1021,8 +1056,8 @@ namespace IngameScript
                 }
 
                 //Check for interior door(s)
-                GetDoors(InteriorDoorIdentifier, AirlockInteriorDoors);
-                if (AirlockInteriorDoors.Count == 0)
+                GetDoors(InteriorDoorIdentifier, InteriorAirlockDoors);
+                if (InteriorAirlockDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
                 }
@@ -1048,8 +1083,8 @@ namespace IngameScript
                 //Initial Setup once necessary blocks are assigned
                 if (InitializationSuccess)
                 {
-                    AllAirlockDoors.AddRange(AirlockExteriorDoors);
-                    AllAirlockDoors.AddRange(AirlockInteriorDoors);
+                    AllAirlockDoors.AddRange(ExteriorAirlockDoors);
+                    AllAirlockDoors.AddRange(InteriorAirlockDoors);
                     //Check for additional hardware one time after initialization
                     AdditionalHardwareCheck();
                     UpdateAirlockInformation();
@@ -1060,7 +1095,7 @@ namespace IngameScript
                     if (AirlockAirVent.GetOxygenLevel() >= 0.95)
                     {
                         AirlockTargetCyclingStatusNumber = 0; //Interior to begin
-                        CycleInterior();
+                        CycleAirlockInterior();
                     }
                     else
                     {
