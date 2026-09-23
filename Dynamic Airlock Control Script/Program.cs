@@ -38,7 +38,7 @@ namespace IngameScript
             //Animation Variable
             bool AnimationComplete = false;
             int tickCounter = 0;
-            const int TOTAL_TICKS = 600; //5 seconds at 60 FPS
+            const int TOTAL_TICKS = 300; //5 seconds at 60 FPS
 
             //Non-changing variables
             float Padding = 12f;
@@ -81,8 +81,8 @@ namespace IngameScript
             IMyAirVent AirlockAirVent;
 
             //Airlock block lists
-            List<IMyDoor> AirlockExteriorDoorGroup = new List<IMyDoor>();
-            List<IMyDoor> AirlockInteriorDoorGroup = new List<IMyDoor>();
+            List<IMyDoor> AirlockExteriorDoors = new List<IMyDoor>();
+            List<IMyDoor> AirlockInteriorDoors = new List<IMyDoor>();
             List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
 
             //Additional hardware blocks
@@ -292,7 +292,7 @@ namespace IngameScript
                             Door.ApplyAction("Open_On");
                         }
 
-                        if (AirlockExteriorDoorGroup[0].Status == DoorStatus.Open)
+                        if (AirlockExteriorDoors[0].Status == DoorStatus.Open)
                         {
                             AirlockExteriorDoorsClosed = false;
                             AirlockStatusNumber = 3; //Depressurized
@@ -832,7 +832,7 @@ namespace IngameScript
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (AirlockExteriorDoorGroup[0].Status == DoorStatus.Closed)
+                    if (AirlockExteriorDoors[0].Status == DoorStatus.Closed)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -848,8 +848,13 @@ namespace IngameScript
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
-                            Door.Enabled = true;
                             Door.ApplyAction("Open_Off");
+                        }
+
+                        //Make sure doors are on to close them
+                        foreach (IMyDoor Door in AirlockExteriorDoors)
+                        {
+                            Door.Enabled = true;
                         }
                     }
                 }
@@ -864,12 +869,12 @@ namespace IngameScript
 
                             if (AirlockPressurized)
                             {
-                                AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoorGroup);
+                                AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoors);
                             }
                         }
                         else
                         {
-                            AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoorGroup);
+                            AirlockInteriorDoorsClosed = OpenDoors(AirlockInteriorDoors);
                         }
                     }
                     else
@@ -888,7 +893,7 @@ namespace IngameScript
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (AirlockInteriorDoorGroup[0].Status == DoorStatus.Closed)
+                    if (AirlockInteriorDoors[0].Status == DoorStatus.Closed)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -903,8 +908,13 @@ namespace IngameScript
                         //Close All Doors, check if they are closed, then lock.
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
-                            Door.Enabled = true;
                             Door.ApplyAction("Open_Off");
+                        }
+
+                        //Make sure doors are on to close them
+                        foreach (IMyDoor Door in AirlockInteriorDoors)
+                        {
+                            Door.Enabled = true;
                         }
                     }
                 }
@@ -919,13 +929,13 @@ namespace IngameScript
 
                             if (!AirlockPressurized)
                             {
-                                AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoorGroup);
+                                AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoors);
                             }
 
                         }
                         else
                         {
-                            AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoorGroup);
+                            AirlockExteriorDoorsClosed = OpenDoors(AirlockExteriorDoors);
                         }
                     }
                     else
@@ -952,18 +962,30 @@ namespace IngameScript
             {
                 var Surface = DisplayScreen;
 
+                Vector2 TextureSize = Surface.TextureSize;
+                Vector2 CanvasSize = Surface.SurfaceSize;
+                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
+
+                Vector2 TriangleSize = new Vector2(CanvasSize.X * 0.75f, CanvasSize.Y * 0.75f);
+                Vector2 CenterPosition = new Vector2(ViewPortOffset.X + (CanvasSize.X / 2f), ViewPortOffset.Y + (TriangleSize.Y / 2f));
+
+                Vector2 BoxPosition = new Vector2();
+                Vector2 BoxSize = new Vector2(CanvasSize.X, (TriangleSize.Y * 0.25f));
+
                 using (var frame = Surface.DrawFrame())
                 {
                     var sprite = new MySprite()
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "Triangle",
-                        Position = Surface.TextureSize / 2f,
-                        Size = new Vector2(100, 100),
+                        Position = CenterPosition,
+                        Size = TriangleSize,
                         Color = Color.Red,
                         RotationOrScale = (float)Math.PI
                     };
                     frame.Add(sprite);
+
+
                 }
 
                 //Increment 10, as the script is Update10
@@ -984,12 +1006,12 @@ namespace IngameScript
                 string ExteriorDoorIdentifier = $"{ HardwareIdentifier} Exterior";
                 string InteriorDoorIdentifier = $"{ HardwareIdentifier} Interior";
 
-                AirlockExteriorDoorGroup.Clear();
-                AirlockInteriorDoorGroup.Clear();
+                AirlockExteriorDoors.Clear();
+                AirlockInteriorDoors.Clear();
 
                 //Check for exterior door(s)
-                GetDoors(ExteriorDoorIdentifier, AirlockExteriorDoorGroup);
-                if (AirlockExteriorDoorGroup.Count == 0)
+                GetDoors(ExteriorDoorIdentifier, AirlockExteriorDoors);
+                if (AirlockExteriorDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
                 }
@@ -999,8 +1021,8 @@ namespace IngameScript
                 }
 
                 //Check for interior door(s)
-                GetDoors(InteriorDoorIdentifier, AirlockInteriorDoorGroup);
-                if (AirlockInteriorDoorGroup.Count == 0)
+                GetDoors(InteriorDoorIdentifier, AirlockInteriorDoors);
+                if (AirlockInteriorDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
                 }
@@ -1026,8 +1048,8 @@ namespace IngameScript
                 //Initial Setup once necessary blocks are assigned
                 if (InitializationSuccess)
                 {
-                    AllAirlockDoors.AddRange(AirlockExteriorDoorGroup);
-                    AllAirlockDoors.AddRange(AirlockInteriorDoorGroup);
+                    AllAirlockDoors.AddRange(AirlockExteriorDoors);
+                    AllAirlockDoors.AddRange(AirlockInteriorDoors);
                     //Check for additional hardware one time after initialization
                     AdditionalHardwareCheck();
                     UpdateAirlockInformation();
