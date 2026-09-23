@@ -189,7 +189,7 @@ namespace IngameScript
                     {
                         if (AirlockTargetCyclingStatusNumber == 0)
                         {
-                            CycleInterior();
+                            CycleAirlockInterior();
                         }
                         else if (AirlockTargetCyclingStatusNumber == 2)
                         {
@@ -343,6 +343,11 @@ namespace IngameScript
                 }
                 HangarLightStatusNumber = 2;
             }//Ends PressurizeHangar*/
+
+            public void VeryifyAirlockSeal()
+            {
+
+            }//Ends VerifyAirlockSeal
 
             public void UpdateAirlockMode()
             {
@@ -596,7 +601,7 @@ namespace IngameScript
                 //Keep playing animation until complete.
                 if (!AnimationComplete && DisplaysProvided)
                 {
-                    AnimationComplete = LoadAnimation(DisplayScreen);
+                    AnimationComplete = LoadRedFoxAnimation(DisplayScreen);
                     return;
                 }
 
@@ -825,7 +830,7 @@ namespace IngameScript
                 }
             }//Ends DepressurizeAirlock
 
-            public void CycleInterior()
+            public void CycleAirlockInterior()
             {
                 if (!AirlockExteriorDoorsClosed)
                 {
@@ -883,7 +888,7 @@ namespace IngameScript
                         AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                     }
                 }
-            }//Ends CycleInterior
+            }//Ends CycleAirlockInterior
 
             public void CycleExterior()
             {
@@ -957,22 +962,59 @@ namespace IngameScript
 
                 return false;
             }//Ends OpenDoors
-            public bool LoadAnimation(IMyTextSurface DisplayScreen)
+            public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
                 var Surface = DisplayScreen;
+                Surface.ScriptBackgroundColor = Color.Black;
+                Surface.ContentType = ContentType.SCRIPT;
+                Surface.Script = "";
+
+                Vector2 TextureSize = Surface.TextureSize;
+                Vector2 CanvasSize = Surface.SurfaceSize;
+                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
+
+                Vector2 TriangleSize = new Vector2(TextureSize.X * 0.75f, TextureSize.Y * 0.75f);
+                Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
+
+                //Sprites 
+                Vector2 TrianglePosition = new Vector2(ViewPortOffset.X + (CanvasSize.X / 2f), ViewPortOffset.Y + (CanvasSize.Y / 2f));
+                Vector2 Box1Position = new Vector2(TrianglePosition.X, TrianglePosition.Y + BoxSize.Y + (BoxSize.Y / 2f));
+                Vector2 Box2Position = new Vector2(TrianglePosition.X, TrianglePosition.Y - (TriangleSize.Y / 2f) - (BoxSize.Y / 2f));
+
+                Vector2 TotalIconSize = new Vector2(TriangleSize.X, TriangleSize.Y + BoxSize.Y);
 
                 using (var frame = Surface.DrawFrame())
                 {
-                    var sprite = new MySprite()
+                    frame.Add(new MySprite()
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "Triangle",
-                        Position = Surface.TextureSize / 2f,
-                        Size = new Vector2(100, 100),
+                        Position = TrianglePosition,
+                        Size = TriangleSize,
                         Color = Color.Red,
-                        RotationOrScale = (float)Math.PI
-                    };
-                    frame.Add(sprite);
+                        RotationOrScale = (float)Math.PI,
+                        Alignment = TextAlignment.CENTER
+                    });
+
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Size = BoxSize,
+                        Position = Box1Position,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER
+                    });
+
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Size = BoxSize,
+                        Position = Box2Position,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER
+                    });
                 }
 
                 //Increment 10, as the script is Update10
@@ -1047,7 +1089,7 @@ namespace IngameScript
                     if (AirlockAirVent.GetOxygenLevel() >= 0.95)
                     {
                         AirlockTargetCyclingStatusNumber = 0; //Interior to begin
-                        CycleInterior();
+                        CycleAirlockInterior();
                     }
                     else
                     {
