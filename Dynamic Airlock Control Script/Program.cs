@@ -37,7 +37,7 @@ namespace IngameScript
 
             //Animation Variable
             bool AnimationComplete = false;
-            int tickCounter = 0;
+            int TickCounter = 0;
             const int TOTAL_TICKS = 300; //5 seconds at 60 FPS
 
             //Non-changing variables
@@ -193,7 +193,7 @@ namespace IngameScript
                         }
                         else if (AirlockTargetCyclingStatusNumber == 2)
                         {
-                            CycleExterior();
+                            CycleAirlockExterior();
                         }
                     }
                 }
@@ -386,7 +386,6 @@ namespace IngameScript
                 //Check if Oxygen tank fill level
                 CheckOxygenTankFillLevel();
                 CheckForExternalAtmosphere();
-
                 DisplaysProvided = (AirlockDisplays.Count > 0) ? true : false;
 
             }//Ends UpdateAirlockInformation
@@ -519,12 +518,10 @@ namespace IngameScript
                 AirlockDisplays.Clear();
                 PrimaryOxygenTank = null;
                 ExternalAirVent = null;
+                DisplaysProvided = false;
+                TickCounter = 0;
 
                 ExternalAirVent = GetVent("External Air Vent");
-                if (ExternalAirVent == null)
-                {
-                    Program.Echo($"Missing {HardwareIdentifier} External Air Vent");
-                }
 
                 //Check for primary oxygen tank
                 List<IMyGasTank> AllGasTanks = new List<IMyGasTank>();
@@ -890,7 +887,7 @@ namespace IngameScript
                 }
             }//Ends CycleAirlockInterior
 
-            public void CycleExterior()
+            public void CycleAirlockExterior()
             {
                 if (!AirlockInteriorDoorsClosed)
                 {
@@ -919,12 +916,6 @@ namespace IngameScript
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
                             Door.ApplyAction("Open_Off");
-                        }
-
-                        //Make sure doors are on to close them
-                        foreach (IMyDoor Door in InteriorAirlockDoors)
-                        {
-                            Door.Enabled = true;
                         }
                     }
                 }
@@ -979,15 +970,15 @@ namespace IngameScript
                 Vector2 CanvasSize = Surface.SurfaceSize;
                 Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
 
-                Vector2 TriangleSize = new Vector2(TextureSize.X * 0.75f, TextureSize.Y * 0.75f);
+                Vector2 TriangleSize = new Vector2(TextureSize.Y * 0.5f, TextureSize.Y * 0.5f);
                 Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
 
-                //Sprites 
-                Vector2 TrianglePosition = new Vector2(ViewPortOffset.X + (CanvasSize.X / 2f), ViewPortOffset.Y + (CanvasSize.Y / 2f));
-                Vector2 Box1Position = new Vector2(TrianglePosition.X, TrianglePosition.Y + BoxSize.Y + (BoxSize.Y / 2f));
-                Vector2 Box2Position = new Vector2(TrianglePosition.X, TrianglePosition.Y - (TriangleSize.Y / 2f) - (BoxSize.Y / 2f));
+                Vector2 TrianglePosition = new Vector2(TextureSize.X / 2f, (TextureSize.Y / 2f) + (BoxSize.Y / 2f));
+                Vector2 BoxPosition = new Vector2(TrianglePosition.X, TrianglePosition.Y + (TriangleSize.Y / 2f) - (BoxSize.Y / 2f) - 15f);
 
-                Vector2 TotalIconSize = new Vector2(TriangleSize.X, TriangleSize.Y + BoxSize.Y);
+                //Size is half the triangle width, and height is half since its half a circle
+                Vector2 SemiCircleSize = new Vector2(TriangleSize.X * 0.25f, TriangleSize.Y * 0.25f);
+                Vector2 SemiCirclePosition = new Vector2(TrianglePosition.X, TrianglePosition.Y);
 
                 using (var frame = Surface.DrawFrame())
                 {
@@ -1007,7 +998,7 @@ namespace IngameScript
                         Type = SpriteType.TEXTURE,
                         Data = "SquareSimple",
                         Size = BoxSize,
-                        Position = Box1Position,
+                        Position = BoxPosition,
                         Color = Color.Black,
                         Alignment = TextAlignment.CENTER
                     });
@@ -1015,17 +1006,18 @@ namespace IngameScript
                     frame.Add(new MySprite()
                     {
                         Type = SpriteType.TEXTURE,
-                        Data = "SquareSimple",
-                        Size = BoxSize,
-                        Position = Box2Position,
+                        Data = "SemiCircle",
+                        Size = SemiCircleSize,
+                        Position = SemiCirclePosition,
                         Color = Color.Black,
-                        Alignment = TextAlignment.CENTER
+                        Alignment = TextAlignment.CENTER,
+                        RotationOrScale = (float)Math.PI
                     });
                 }
 
                 //Increment 10, as the script is Update10
-                tickCounter += 10;
-                if (tickCounter >= TOTAL_TICKS)
+                TickCounter += 10;
+                if (TickCounter >= TOTAL_TICKS)
                 {
                     return true; //Animation Complete
                 }
@@ -1100,7 +1092,7 @@ namespace IngameScript
                     else
                     {
                         AirlockTargetCyclingStatusNumber = 2; //Exterior to begin
-                        CycleExterior();
+                        CycleAirlockExterior();
                     }
 
                     //Update Lights
