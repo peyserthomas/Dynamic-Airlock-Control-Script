@@ -35,10 +35,10 @@ namespace IngameScript
             //Reference back to the owning program for Echo
             Program Program;
 
-            //Animation Variable
+            //Animation Variables
             bool AnimationComplete = false;
             int TickCounter = 0;
-            const int TOTAL_TICKS = 300; //5 seconds at 60 FPS
+            const int TOTAL_TICKS = 900; //15 seconds at 60 FPS
 
             //Non-changing variables
             float Padding = 12f;
@@ -61,7 +61,6 @@ namespace IngameScript
             bool AACF = true; //Airlock Atmosphere Control Functionality
             bool HACF = true; //Hangar Atmosphere Control Functionality
             bool ACCF = true; //Airlock Cycling Control Functionality
-            bool HCCF = true; //Hangar Cycling Control Functionality
             bool AtmosphereCheck = false;
             bool OxygenTankFull = false;
             bool DisplaysProvided = false;
@@ -76,8 +75,10 @@ namespace IngameScript
             string AirlockAtmosphereStatusName = "";
             string AirlockCyclingStatusName = "";
             string AirlockTargetCyclingStatusName = "";
+
             string HangarAtmosphereStatusName = "";
             string HangarCyclingStatusName = "";
+            string HangarTargetCyclingStatusName = "";
 
             //Airlock blocks
             IMyAirVent AirlockAirVent;
@@ -102,18 +103,23 @@ namespace IngameScript
             List<IMyInteriorLight> HangarStatusLightGroup = new List<IMyInteriorLight>();
             List<IMyDoor> HangarDoors = new List<IMyDoor>();
 
-            //Regular Airlock Cycles
+            
             //Status Variables: 0 = Pressurizing, 1 = Pressurized, 2 = Depressurizing, 3 = Depressurized, 4 = Working, 5 = ACF Disabled
-            int AirlockLightStatusNumber = 4;
-            int HangarLightStatusNumber = 4;
-            int AirlockAtmosphereStatusNumber = 4;
-            int HangarAtmosphereStatusNumber = 4;
-            int AirlockCyclingStatusNumber = 0;
-            int AirlockTargetCyclingStatusNumber = 0;
-            int HangarCyclingStatusNumber = 0;
             int AirlockMode = 0; //0 = Default, 1 = Hangar Mode, 2 = Maintenance Mode
 
+            int AirlockLightStatusNumber = 4;
+            int AirlockAtmosphereStatusNumber = 4;
+            int AirlockCyclingStatusNumber = 0;
+            int AirlockTargetCyclingStatusNumber = 0;
+
+            int HangarLightStatusNumber = 4;
+            int HangarAtmosphereStatusNumber = 4;
+            int HangarCyclingStatusNumber = 0;
+            int HangarTargetCyclingStatusNumber = 0;
+
+
             //Light Data
+            static readonly Color LogoColor = new Color(255, 20, 20);
             static readonly Color Red = new Color(255, 0, 0); //Depressurizing
             static readonly Color Orange = new Color(255, 125, 0); //AFC Disabled
             static readonly Color Yellow = new Color(255, 220, 0); //Working
@@ -151,11 +157,7 @@ namespace IngameScript
 
                 if (argument == "cyclehangar")
                 {
-                    if (HangarCyclingStatusNumber == 0 || HangarCyclingStatusNumber == 2)
-                    {
-                        HangarCyclingStatusNumber = 1;
-                        HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
-                    }
+                    HangarCycleRequested = true;
                 }
 
                 if (argument == "update")
@@ -170,6 +172,13 @@ namespace IngameScript
             }//Ends ProcessArguments
             public void ProcessCycling()
             {
+                //If Cycling control disabled, do not continue, reset cycle and idle
+                if (!ACCF)
+                {
+                    AirlockCycleRequested = false;
+                    IdleAirlock();
+                }
+
                 if (AirlockCycleRequested)
                 {
                     //Before cycling, Target cycle should already match current cycle
@@ -200,151 +209,40 @@ namespace IngameScript
                     }
                 }
 
+                if (AirlockMode == 2)
+                {
+                    if (HangarCycleRequested)
+                    {
+                        //Before cycling, Target cycle should already match current cycle
+                        if (HangarTargetCyclingStatusNumber == HangarCyclingStatusNumber)
+                        {
+                            if (HangarCyclingStatusNumber == 0) //Cycle to exterior
+                            {
+                                HangarTargetCyclingStatusNumber = 2;
+                            }
+                            else if (HangarCyclingStatusNumber == 2) //Cycle to interior
+                            {
+                                HangarTargetCyclingStatusNumber = 0;
+                            }
+
+                            HangarCyclingStatusNumber = 1; //Set current status to cycling
+                            HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                        }
+                    }
+                    else
+                    {
+                        if (AirlockTargetCyclingStatusNumber == 0)
+                        {
+                            CycleHangarInterior();
+                        }
+                        else if (AirlockTargetCyclingStatusNumber == 2)
+                        {
+                            CycleHangarExterior();
+                        }
+                    }
+                }
+
             }//Ends ProcessCycling
-
-            /*public void PressurizeHangar()
-            {
-                if (!HangarDoorsLocked)
-                {
-                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = false;
-                        }
-
-                        //Lock hangar doors when closed and pressurize
-                        HangarDoorsLocked = true;
-                        HangarAirVent.Depressurize = false;
-                    }
-                    else
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.ApplyAction("Open_Off");
-                        }
-                    }
-                        
-                }
-                else
-                {
-                    if (HangarAirVent.GetOxygenLevel() >= 0.98)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = true;
-                            Door.ApplyAction("Open_On");
-                        }
-
-                        //Once the hangar is pressurized, turn off ACF and set status
-                        AACF = false;
-                        AirlockStatusNumber = 5;
-                        AirlockStatus = StatusNames[AirlockStatusNumber];
-
-                        HangarStatusNumber = 1; //Pressurized
-                        HangarLightStatusNumber = 1; //Pressurized
-                        HangarStatus = StatusNames[HangarStatusNumber];
-                    }
-                }
-                
-            }//Ends PressurizeHangar
-            public void DepressurizeHangar()
-            {
-                if (HangarDoorsLocked)
-                {
-                    if (AirlockStatusNumber == 1)
-                    {
-                        HangarAirVent.Depressurize = true;
-                    }
-                    else
-                    {
-                        HangarDoorsLocked = false;
-                    }
-
-                    if (HangarAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
-                    {
-
-                    }
-                    //Close doors first, then check if they are closed
-                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = false;
-                        }
-                        //Start Depressurization
-                        
-                    }
-                    else
-                    {
-                        //Close All Doors, check if they are closed, then lock.
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.ApplyAction("Open_Off");
-                        }
-                    }
-                }
-                else
-                {
-                    if (HangarAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = true;
-                            Door.ApplyAction("Open_On");
-                        }
-
-                        if (ExteriorAirlockDoors[0].Status == DoorStatus.Open)
-                        {
-                            AirlockExteriorDoorsClosed = false;
-                            AirlockStatusNumber = 3; //Depressurized
-                            AirlockLightStatusNumber = 3; //Depressurized
-                            AirlockStatus = StatusNames[AirlockStatusNumber];
-                        }
-                    }
-                }
-                //stop here
-                HangarLightStatusNumber = 0;
-
-                if (HangarDoorsLocked)
-                {
-                    if (HangarDoorGroup[0].Status == DoorStatus.Closed)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = false;
-                        }
-
-                        HangarDoorsLocked = true;
-                        HangarAirVent.Depressurize = false;
-                    }
-                    else
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.ApplyAction("Open_Off");
-                        }
-                    }
-
-                }
-                else
-                {
-                    if (HangarAirVent.GetOxygenLevel() >= 0.98)
-                    {
-                        foreach (IMyDoor Door in HangarDoorGroup)
-                        {
-                            Door.Enabled = true;
-                            Door.ApplyAction("Open_On");
-                        }
-
-                        AACF = true;
-                        HangarStatusNumber = 1; //Pressurized
-                        HangarLightStatusNumber = 1; //Pressurized
-                        HangarStatus = StatusNames[HangarStatusNumber];
-                    }
-                }
-                HangarLightStatusNumber = 2;
-            }//Ends PressurizeHangar*/
 
             public void VeryifyAirlockSeal()
             {
@@ -363,10 +261,16 @@ namespace IngameScript
 
             public void AirlockModeManager()
             {
-                if (AirlockMode == 2)
+                if (AirlockMode == 0 || AirlockMode == 1)
                 {
-                    
+                    ACCF = true;
                 }
+                else if (AirlockMode == 2)
+                {
+                    ACCF = false;
+                }
+
+                AirlockModeName = AirlockModeNames[AirlockMode];
             }//Ends AirlockModeManager
 
             public void CheckOxygenTankFillLevel()
@@ -387,7 +291,9 @@ namespace IngameScript
             {
                 //Check if Oxygen tank fill level
                 CheckOxygenTankFillLevel();
-                CheckForExternalAtmosphere();
+                ExternalAtmosphereCheck();
+                ACFManager();
+
                 DisplaysProvided = (AirlockDisplays.Count > 0) ? true : false;
 
             }//Ends UpdateAirlockInformation
@@ -782,7 +688,7 @@ namespace IngameScript
                 return TextSize;
             }//Ends GetTextSizeInformation
 
-            public void CheckForExternalAtmosphere()
+            public void ExternalAtmosphereCheck()
             {
                 if (ExternalAirVent == null)
                 {
@@ -830,7 +736,40 @@ namespace IngameScript
                     AirlockPressurized = false;
                 }
             }//Ends DepressurizeAirlock
-            /*public void CycleHangarInterior()
+            public void PressurizeHangar()
+            {
+                //Pressurizing
+                HangarAtmosphereStatusNumber = 0;
+                HangarLightStatusNumber = 0;
+                HangarAtmosphereStatusName = AtmosphereStatusNames[HangarAtmosphereStatusNumber];
+                HangarAirVent.Depressurize = false;
+
+                if (HangarAirVent.GetOxygenLevel() >= 0.98)
+                {
+                    HangarAtmosphereStatusNumber = 1; //Pressurized
+                    HangarLightStatusNumber = 1; //Pressurized
+                    HangarAtmosphereStatusName = AtmosphereStatusNames[HangarAtmosphereStatusNumber];
+                    HangarPressurized = true;
+                }
+            }//Ends PressurizeHangar
+            public void DepressurizeHangar()
+            {
+                //Depressurizing
+                HangarAtmosphereStatusNumber = 2;
+                HangarLightStatusNumber = 2;
+                HangarAtmosphereStatusName = AtmosphereStatusNames[HangarAtmosphereStatusNumber];
+                HangarAirVent.Depressurize = true;
+
+
+                if (HangarAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                {
+                    HangarAtmosphereStatusNumber = 3; //Depressurized
+                    HangarLightStatusNumber = 3; //Depressurized
+                    HangarAtmosphereStatusName = AtmosphereStatusNames[HangarAtmosphereStatusNumber];
+                    HangarPressurized = false;
+                }
+            }//Ends DepressurizeHangar
+            public void CycleHangarInterior()
             {
                 if (!HangarDoorsClosed)
                 {
@@ -863,31 +802,53 @@ namespace IngameScript
                 }
                 else
                 {
-                    if (AirlockInteriorDoorsClosed)
+                    //If no external atmosphere, pressurize hangar
+                    if (HACF)
                     {
-                        //If no external atmosphere, pressurize airlock
-                        if (AACF)
-                        {
-                            PressurizeAirlock();
+                        PressurizeHangar();
 
-                            if (AirlockPressurized)
-                            {
-                                AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
-                            }
+                        if (HangarPressurized)
+                        {
+                            //Once Hangar is Pressurized, disable cycling
+                            AACF = false;
+                        }
+                    }
+
+                    HangarCycleRequested = false;
+                    HangarCyclingStatusNumber = 0;
+                    HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                }
+            }//Ends CycleHangarInterior
+            public void CycleHangarExterior()
+            {
+                if (HangarDoorsClosed)
+                {
+                    if (HACF)
+                    {
+                        if (HangarPressurized)
+                        {
+                            DepressurizeHangar();
                         }
                         else
                         {
-                            AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
+                            HangarDoorsClosed = OpenDoors(HangarDoors);
                         }
                     }
                     else
                     {
-                        AirlockCycleRequested = false;
-                        AirlockCyclingStatusNumber = 0;
-                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                        HangarDoorsClosed = OpenDoors(HangarDoors);
                     }
+
+                    //Enable AACF Regardless of atmosphere
+                    ACCF = true;
                 }
-            }//Ends CycleAirlockInterior*/
+                else
+                {
+                    HangarCycleRequested = false;
+                    HangarCyclingStatusNumber = 2;
+                    HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                }
+            }//Ends CycleExterior
 
             public void CycleAirlockInterior()
             {
@@ -1023,6 +984,11 @@ namespace IngameScript
             }//Ends OpenDoors
             public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
+                //Start at Black, fade in
+                float LogoBrightness = (TickCounter <= 300) ? (TickCounter / 300f) : 1;
+                Color CurrentLogoColor = Color.Multiply(LogoColor, LogoBrightness);
+
+
                 var Surface = DisplayScreen;
                 Surface.ScriptBackgroundColor = Color.Black;
                 Surface.ContentType = ContentType.SCRIPT;
@@ -1032,7 +998,10 @@ namespace IngameScript
                 Vector2 CanvasSize = Surface.SurfaceSize;
                 Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
 
-                Vector2 TriangleSize = new Vector2(TextureSize.Y * 0.5f, TextureSize.Y * 0.5f);
+                //In case the surface is not square
+                float SmallerDimension = Math.Min(TextureSize.X, TextureSize.Y);
+
+                Vector2 TriangleSize = new Vector2(SmallerDimension * 0.5f, SmallerDimension * 0.5f);
                 Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
 
                 Vector2 TrianglePosition = new Vector2(TextureSize.X / 2f, (TextureSize.Y / 2f) + (BoxSize.Y / 2f));
@@ -1040,7 +1009,7 @@ namespace IngameScript
 
                 //Size is half the triangle width, and height is half since its half a circle
                 Vector2 SemiCircleSize = new Vector2(TriangleSize.X * 0.25f, TriangleSize.Y * 0.25f);
-                Vector2 SemiCirclePosition = new Vector2(TrianglePosition.X, TrianglePosition.Y);
+                Vector2 SemiCirclePosition = new Vector2(TrianglePosition.X, TrianglePosition.Y - (SemiCircleSize.Y / 2f));
 
                 using (var frame = Surface.DrawFrame())
                 {
@@ -1050,7 +1019,7 @@ namespace IngameScript
                         Data = "Triangle",
                         Position = TrianglePosition,
                         Size = TriangleSize,
-                        Color = Color.Red,
+                        Color = CurrentLogoColor,
                         RotationOrScale = (float)Math.PI,
                         Alignment = TextAlignment.CENTER
                     });
@@ -1085,7 +1054,40 @@ namespace IngameScript
                 }
 
                 return false;
-            }//Ends LoadAnimation
+            }//Ends LoadRedFoxAnimation
+            public void ACFManager()
+            {
+                //If airlock is in default mode, then if there is external atmosphere, disable AACF
+                if (AirlockMode == 1)
+                {
+                    AACF = (AtmosphereCheck) ? false : true;
+                }
+                else if (AirlockMode == 2)
+                {
+                    HACF = (AtmosphereCheck) ? false : true;
+                }
+            }
+            public void IdleAirlock()
+            {
+                if (AirlockExteriorDoorsClosed)
+                {
+                    AirlockExteriorDoorsClosed = OpenDoors(ExteriorAirlockDoors);
+                }
+                if (AirlockInteriorDoorsClosed)
+                {
+                    AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
+                }
+
+            }//Ends IdleAirlock
+
+            public void IdleHangar()
+            {
+                if (HangarDoorsClosed)
+                {
+                    HangarDoorsClosed = OpenDoors(HangarDoors);
+                }
+
+            }//Ends IdleHangar
 
             public void InitialHardwareSetup()
             {
