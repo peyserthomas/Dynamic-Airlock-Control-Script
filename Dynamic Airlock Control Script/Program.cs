@@ -53,14 +53,18 @@ namespace IngameScript
             bool AirlockPressurized = false;
             bool HangarPressurized = false;
 
+            bool AirlockSealCompromised = true;
+
             bool AirlockCycleRequested = false;
             bool HangarCycleRequested = false;
+
             bool AirlockInteriorDoorsClosed = false;
             bool AirlockExteriorDoorsClosed = false;
             bool HangarDoorsClosed = false;
             bool AACF = true; //Airlock Atmosphere Control Functionality
-            bool HACF = true; //Hangar Atmosphere Control Functionality
             bool ACCF = true; //Airlock Cycling Control Functionality
+            bool HACF = true; //Hangar Atmosphere Control Functionality
+            
             bool AtmosphereCheck = false;
             bool OxygenTankFull = false;
             bool DisplaysProvided = false;
@@ -75,6 +79,9 @@ namespace IngameScript
             string AirlockAtmosphereStatusName = "";
             string AirlockCyclingStatusName = "";
             string AirlockTargetCyclingStatusName = "";
+            string AACFName = "";
+            string ACCFName = "";
+            string HACFName = "";
 
             string HangarAtmosphereStatusName = "";
             string HangarCyclingStatusName = "";
@@ -179,6 +186,13 @@ namespace IngameScript
                     IdleAirlock();
                 }
 
+                //If Seal Compromised, return
+                if (AirlockSealCompromised)
+                {
+                    AirlockCycleRequested = false;
+                    return;
+                }
+
                 if (AirlockCycleRequested)
                 {
                     //Before cycling, Target cycle should already match current cycle
@@ -194,7 +208,6 @@ namespace IngameScript
                         }
 
                         AirlockCyclingStatusNumber = 1; //Set current status to cycling
-                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                     }
                     else
                     {
@@ -226,7 +239,6 @@ namespace IngameScript
                             }
 
                             HangarCyclingStatusNumber = 1; //Set current status to cycling
-                            HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
                         }
                     }
                     else
@@ -244,8 +256,17 @@ namespace IngameScript
 
             }//Ends ProcessCycling
 
-            public void VeryifyAirlockSeal()
+            public void VerifyAirlockSeal()
             {
+                
+                if (AirlockAirVent.CanPressurize)
+                {
+                    AirlockSealCompromised = false;
+                }
+                else
+                {
+                    AirlockSealCompromised = true;
+                }
 
             }//Ends VerifyAirlockSeal
 
@@ -736,6 +757,7 @@ namespace IngameScript
                     AirlockPressurized = false;
                 }
             }//Ends DepressurizeAirlock
+
             public void PressurizeHangar()
             {
                 //Pressurizing
@@ -752,6 +774,7 @@ namespace IngameScript
                     HangarPressurized = true;
                 }
             }//Ends PressurizeHangar
+
             public void DepressurizeHangar()
             {
                 //Depressurizing
@@ -769,6 +792,7 @@ namespace IngameScript
                     HangarPressurized = false;
                 }
             }//Ends DepressurizeHangar
+
             public void CycleHangarInterior()
             {
                 if (!HangarDoorsClosed)
@@ -819,6 +843,7 @@ namespace IngameScript
                     HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
                 }
             }//Ends CycleHangarInterior
+
             public void CycleHangarExterior()
             {
                 if (HangarDoorsClosed)
@@ -884,6 +909,15 @@ namespace IngameScript
                 }
                 else
                 {
+                    //Check when doors are closed to prevent false positives from space vaccuum
+                    VerifyAirlockSeal();
+                    if (AirlockSealCompromised)
+                    {
+                        AirlockCycleRequested = false;
+                        AirlockTargetCyclingStatusNumber = 2;
+                        return;
+                    }
+
                     if (AirlockInteriorDoorsClosed)
                     {
                         //If no external atmosphere, pressurize airlock
@@ -905,7 +939,6 @@ namespace IngameScript
                     {
                         AirlockCycleRequested = false;
                         AirlockCyclingStatusNumber = 0;
-                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                     }
                 }
             }//Ends CycleAirlockInterior
@@ -944,6 +977,14 @@ namespace IngameScript
                 }
                 else
                 {
+                    VerifyAirlockSeal();
+                    if (AirlockSealCompromised)
+                    {
+                        AirlockCycleRequested = false;
+                        AirlockTargetCyclingStatusNumber = 2;
+                        return;
+                    }
+
                     if (AirlockExteriorDoorsClosed)
                     {
                         //If no external atmosphere, depressurize airlock
@@ -971,6 +1012,41 @@ namespace IngameScript
                     }
                 }
             }//Ends CycleExterior
+            public void UpdateVariableLabelNames()
+            {
+                AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                AirlockTargetCyclingStatusName = CyclingStatusNames[AirlockTargetCyclingStatusNumber];
+
+                HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                HangarTargetCyclingStatusName = CyclingStatusNames[HangarTargetCyclingStatusNumber];
+
+                if (AACF)
+                {
+                    AACFName = "Enabled";
+                }
+                else
+                {
+                    AACFName = "Disabled";
+                }
+
+                if (ACCF)
+                {
+                    ACCFName = "Enabled";
+                }
+                else
+                {
+                    ACCFName = "Disabled";
+                }
+
+                if (HACF)
+                {
+                    HACFName = "Enabled";
+                }
+                else
+                {
+                    HACFName = "Disabled";
+                }
+            }//Update Variable Names
 
             public bool OpenDoors(List<IMyDoor> DoorGroup)
             {
@@ -982,6 +1058,7 @@ namespace IngameScript
 
                 return false;
             }//Ends OpenDoors
+
             public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
                 //Start at Black, fade in
@@ -1055,6 +1132,7 @@ namespace IngameScript
 
                 return false;
             }//Ends LoadRedFoxAnimation
+
             public void ACFManager()
             {
                 //If airlock is in default mode, then if there is external atmosphere, disable AACF
@@ -1067,6 +1145,7 @@ namespace IngameScript
                     HACF = (AtmosphereCheck) ? false : true;
                 }
             }
+
             public void IdleAirlock()
             {
                 if (AirlockExteriorDoorsClosed)
@@ -1215,8 +1294,10 @@ namespace IngameScript
                 if (!Airlock.GetSetupCompletionStatus())
                 {
                     Airlock.InitialHardwareSetup();
+                    return;
                 }
 
+                Airlock.UpdateVariableLabelNames();
                 Airlock.UpdateAirlockInformation();
                 Airlock.ProcessCycling();
                 Airlock.UpdateLights();
