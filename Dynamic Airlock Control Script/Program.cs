@@ -124,7 +124,6 @@ namespace IngameScript
             int HangarCyclingStatusNumber = 0;
             int HangarTargetCyclingStatusNumber = 0;
 
-
             //Light Data
             static readonly Color LogoColor = new Color(255, 20, 20);
             static readonly Color Red = new Color(255, 0, 0); //Depressurizing
@@ -147,11 +146,233 @@ namespace IngameScript
                 HardwareIdentifier = HardwareTag;
             }
 
+            //Hardware Methods
+            public void InitialHardwareSetup()
+            {
+                int InitializedBlockCount = 0;
+
+                string AirlockVentIdentifier = $"{HardwareIdentifier} Air Vent";
+                string ExteriorDoorIdentifier = $"{HardwareIdentifier} Exterior";
+                string InteriorDoorIdentifier = $"{HardwareIdentifier} Interior";
+
+                ExteriorAirlockDoors.Clear();
+                InteriorAirlockDoors.Clear();
+
+                //Check for exterior door(s)
+                GetDoors(ExteriorDoorIdentifier, ExteriorAirlockDoors);
+                if (ExteriorAirlockDoors.Count == 0)
+                {
+                    Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
+                }
+                else
+                {
+                    InitializedBlockCount++;
+                }
+
+                //Check for interior door(s)
+                GetDoors(InteriorDoorIdentifier, InteriorAirlockDoors);
+                if (InteriorAirlockDoors.Count == 0)
+                {
+                    Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
+                }
+                else
+                {
+                    InitializedBlockCount++;
+                }
+
+                //Check for necessary air vent
+                AirlockAirVent = GetVent(AirlockVentIdentifier);
+                if (AirlockAirVent == null)
+                {
+                    Program.Echo($"Missing {HardwareIdentifier} Airlock Air Vent");
+                }
+                else
+                {
+                    InitializedBlockCount++;
+                }
+
+                bool InitializationSuccess = (InitializedBlockCount == 3) ? true : false;
+                InitialSetupComplete = InitializationSuccess;
+
+                //Initial Setup once necessary blocks are assigned
+                if (InitializationSuccess)
+                {
+                    AllAirlockDoors.AddRange(ExteriorAirlockDoors);
+                    AllAirlockDoors.AddRange(InteriorAirlockDoors);
+                    //Check for additional hardware one time after initialization
+                    AdditionalHardwareCheck();
+                    UpdateAirlockInformation();
+
+                    //Cycle Initially.
+                    AirlockCycleRequested = true;
+
+                    if (AirlockAirVent.GetOxygenLevel() >= 0.95)
+                    {
+                        AirlockTargetCyclingStatusNumber = 0; //Interior to begin
+                        CycleAirlockInterior();
+                    }
+                    else
+                    {
+                        AirlockTargetCyclingStatusNumber = 2; //Exterior to begin
+                        CycleAirlockExterior();
+                    }
+
+                    //Update Lights
+                    AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
+                }
+
+            }//Ends InitialBlockSetup
+
+            //Getter Methods
+            public string GetHardwareIdentifier()
+            {
+                return HardwareIdentifier;
+            } //Ends GetHardwareIdentifier
+
             public bool GetSetupCompletionStatus()
             {
                 return InitialSetupComplete;
-            }
+            }//Ends GetCompletionStatus
 
+            public IMyAirVent GetVent(string AirVentIdentifier)
+            {
+                IMyAirVent SearchedVent = null;
+
+                List<IMyAirVent> AllVents = new List<IMyAirVent>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Program.Me.CubeGrid);
+
+                foreach (IMyAirVent Vent in AllVents)
+                {
+                    string VentName = Vent.CustomName.ToLower();
+                    if (VentName.Contains(AirVentIdentifier.ToLower()))
+                    {
+                        SearchedVent = Vent;
+                    }
+                }
+
+                return SearchedVent;
+            }//Ends GetVent
+
+            public void GetDoors(string DoorHardwareIdentifier, List<IMyDoor> DoorList)
+            {
+                List<IMyDoor> AllDoors = new List<IMyDoor>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Program.Me.CubeGrid);
+
+                //Check for exterior doors, and add door to list if name contains identifier
+                foreach (IMyDoor Door in AllDoors)
+                {
+                    //Ensure both the name and identifier are lowercase for comparison
+                    string DoorName = Door.CustomName.ToLower();
+                    if (DoorName.Contains(DoorHardwareIdentifier.ToLower()))
+                    {
+                        DoorList.Add(Door);
+                    }
+                }
+            }//Ends GetDoor
+
+            public Vector2 GetTextSizeInformation(IMyTextSurface Surface, string Text, float FontScale)
+            {
+                Vector2 TextSize = Surface.MeasureStringInPixels(
+                new StringBuilder(Text),
+                "White",   // Font name
+                FontScale   // Font scale
+                );
+
+                return TextSize;
+            }//Ends GetTextSizeInformation
+
+            //Step One
+            public void UpdateAirlockInformation()
+            {
+                //Check if Oxygen tank fill level
+                CheckOxygenTankFillLevel();
+                //Update Atmosphere check and set AACF and HACF states.
+                ACFManager();
+                //Update Cycle and Atmosphere Status field names
+                UpdateVariableLabelNames();
+                DisplaysProvided = (AirlockDisplays.Count > 0) ? true : false;
+
+            }//Ends UpdateAirlockInformation
+
+            public void UpdateVariableLabelNames()
+            {
+                AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                AirlockTargetCyclingStatusName = CyclingStatusNames[AirlockTargetCyclingStatusNumber];
+
+                HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
+                HangarTargetCyclingStatusName = CyclingStatusNames[HangarTargetCyclingStatusNumber];
+
+                if (AACF)
+                {
+                    AACFName = "Enabled";
+                }
+                else
+                {
+                    AACFName = "Disabled";
+                }
+
+                if (ACCF)
+                {
+                    ACCFName = "Enabled";
+                }
+                else
+                {
+                    ACCFName = "Disabled";
+                }
+
+                if (HACF)
+                {
+                    HACFName = "Enabled";
+                }
+                else
+                {
+                    HACFName = "Disabled";
+                }
+            }//Update Variable Names
+
+            public void CheckOxygenTankFillLevel()
+            {
+                if (PrimaryOxygenTank == null)
+                {
+                    return;
+                }
+
+                //Retrieve fill ration (0.0 to 1.0), then convert to percentage for comparison
+                double OxygenTankFillRatio = PrimaryOxygenTank.FilledRatio;
+                OxygenTankFillPercentage = OxygenTankFillRatio * 100;
+
+                OxygenTankFull = (OxygenTankFillPercentage >= 98);
+            }//Ends CheckOxygenTankLevel
+
+            public void ACFManager()
+            {
+                //Update Atmosphere Check
+                ExternalAtmosphereCheck();
+
+                //If airlock is in default mode, then if there is external atmosphere, disable AACF
+                if (AirlockMode == 1)
+                {
+                    AACF = (AtmosphereCheck) ? false : true;
+                }
+                else if (AirlockMode == 2)
+                {
+                    HACF = (AtmosphereCheck) ? false : true;
+                }
+            }//Emds ACFManager
+
+            public void ExternalAtmosphereCheck()
+            {
+                if (ExternalAirVent == null)
+                {
+                    return;
+                }
+
+                //0.8f to reduce false positives
+                float ExternalOxygenLevel = ExternalAirVent.GetOxygenLevel();
+                AtmosphereCheck = (ExternalOxygenLevel >= 0.80f) ? true : false;
+            }//Ends CheckForAtmosphere
+
+            //Step Two
             public void ProcessArguments(string argument)
             {
                 argument = argument.ToLower();
@@ -177,6 +398,103 @@ namespace IngameScript
                     UpdateAirlockMode();
                 }
             }//Ends ProcessArguments
+
+            public void UpdateAirlockMode()
+            {
+                //Increment mode, if greater than 2, reset to 0
+                AirlockMode++;
+                AirlockMode = (AirlockMode > 2) ? 0 : AirlockMode;
+                AirlockModeName = AirlockModeNames[AirlockMode];
+
+                AirlockModeManager();
+            }//Ends UpdateAirlockMode
+
+            public void AirlockModeManager()
+            {
+                if (AirlockMode == 0 || AirlockMode == 1)
+                {
+                    ACCF = true;
+                }
+                else if (AirlockMode == 2)
+                {
+                    ACCF = false;
+                }
+
+                AirlockModeName = AirlockModeNames[AirlockMode];
+            }//Ends AirlockModeManager
+
+            public void AdditionalHardwareCheck()
+            {
+                AirlockStatusLightGroup.Clear();
+                AirlockDisplays.Clear();
+                PrimaryOxygenTank = null;
+                ExternalAirVent = null;
+                DisplaysProvided = false;
+                AnimationComplete = false;
+                TickCounter = 0;
+
+                ExternalAirVent = GetVent("External Air Vent");
+
+                //Check for primary oxygen tank
+                List<IMyGasTank> AllGasTanks = new List<IMyGasTank>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllGasTanks, Tank => Tank.CubeGrid == Program.Me.CubeGrid);
+                string TankIdentifier = "Primary Oxygen Tank";
+                foreach (IMyGasTank Tank in AllGasTanks)
+                {
+                    string TankName = Tank.CustomName.ToLower();
+                    if (TankName.Contains(TankIdentifier.ToLower()))
+                    {
+                        PrimaryOxygenTank = Tank;
+                        break;
+                    }
+                }
+
+                //Check for seperate displays
+                List<IMyTextPanel> AllDisplays = new List<IMyTextPanel>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllDisplays, Display => Display.CubeGrid == Program.Me.CubeGrid);
+                string DisplayIdentifier = HardwareIdentifier + " Airlock Display";
+                foreach (IMyTextPanel Display in AllDisplays)
+                {
+                    string DisplayName = Display.CustomName.ToLower();
+                    if (DisplayName.Contains(DisplayIdentifier.ToLower()))
+                    {
+                        AirlockDisplays.Add(Display);
+                    }
+                }
+
+                //Check for status lights
+                List<IMyInteriorLight> AllLights = new List<IMyInteriorLight>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllLights, Light => Light.CubeGrid == Program.Me.CubeGrid);
+                string LightIdentifier = HardwareIdentifier + " Status";
+                foreach (IMyInteriorLight Light in AllLights)
+                {
+                    string LightName = Light.CustomName.ToLower();
+                    if (LightName.Contains(LightIdentifier.ToLower()))
+                    {
+                        AirlockStatusLightGroup.Add(Light);
+                    }
+                }
+
+                //Check for button panel screens
+                List<IMyButtonPanel> AllButtonPanels = new List<IMyButtonPanel>();
+                Program.GridTerminalSystem.GetBlocksOfType(AllButtonPanels, ButtonPanel => ButtonPanel.CubeGrid == Program.Me.CubeGrid);
+                string ButtonPanelIdentifier = "Button Panel";
+                foreach (IMyButtonPanel ButtonPanel in AllButtonPanels)
+                {
+                    string ButtonPanelName = ButtonPanel.CustomName.ToLower();
+                    if (ButtonPanelName.Contains(HardwareIdentifier.ToLower()) && ButtonPanelName.Contains(ButtonPanelIdentifier.ToLower()))
+                    {
+                        IMyTextSurfaceProvider SurfaceProvider = ButtonPanel as IMyTextSurfaceProvider;
+                        if (SurfaceProvider != null && SurfaceProvider.SurfaceCount > 0)
+                        {
+                            AirlockDisplays.Add(SurfaceProvider.GetSurface(0));
+                        }
+                    }
+                }
+
+            }//Ends AdditionalHardwareCheck
+
+            //Step Three
             public void ProcessCycling()
             {
                 //If Cycling control disabled, do not continue, reset cycle and idle
@@ -256,69 +574,7 @@ namespace IngameScript
 
             }//Ends ProcessCycling
 
-            public void VerifyAirlockSeal()
-            {
-                
-                if (AirlockAirVent.CanPressurize)
-                {
-                    AirlockSealCompromised = false;
-                }
-                else
-                {
-                    AirlockSealCompromised = true;
-                }
-
-            }//Ends VerifyAirlockSeal
-
-            public void UpdateAirlockMode()
-            {
-                //Increment mode, if greater than 2, reset to 0
-                AirlockMode++;
-                AirlockMode = (AirlockMode > 2) ? 0 : AirlockMode;
-                AirlockModeName = AirlockModeNames[AirlockMode];
-
-                AirlockModeManager();
-            }//Ends UpdateAirlockMode
-
-            public void AirlockModeManager()
-            {
-                if (AirlockMode == 0 || AirlockMode == 1)
-                {
-                    ACCF = true;
-                }
-                else if (AirlockMode == 2)
-                {
-                    ACCF = false;
-                }
-
-                AirlockModeName = AirlockModeNames[AirlockMode];
-            }//Ends AirlockModeManager
-
-            public void CheckOxygenTankFillLevel()
-            {
-                if (PrimaryOxygenTank == null)
-                {
-                    return;
-                }
-
-                //Retrieve fill ration (0.0 to 1.0), then convert to percentage for comparison
-                double OxygenTankFillRatio = PrimaryOxygenTank.FilledRatio;
-                OxygenTankFillPercentage = OxygenTankFillRatio * 100;
-
-                OxygenTankFull = (OxygenTankFillPercentage >= 98);
-            }//Ends CheckOxygenTankLevel
-
-            public void UpdateAirlockInformation()
-            {
-                //Check if Oxygen tank fill level
-                CheckOxygenTankFillLevel();
-                ExternalAtmosphereCheck();
-                ACFManager();
-
-                DisplaysProvided = (AirlockDisplays.Count > 0) ? true : false;
-
-            }//Ends UpdateAirlockInformation
-
+            //Step Four
             public void UpdateLights()
             {
                 Color[] LightColors = { Yellow, Green, Red, Red, Orange, Orange };
@@ -326,7 +582,7 @@ namespace IngameScript
                 CurrentHangarLightColor = LightColors[HangarLightStatusNumber];
                 AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
 
-                if (AirlockMode == 1) 
+                if (AirlockMode == 1)
                 {
                     AirlockLightManager(HangarStatusLightGroup, HangarLightStatusNumber, CurrentHangarLightColor);
                 }
@@ -353,6 +609,20 @@ namespace IngameScript
                     Light.BlinkOffset = CurrentBlinkOffset;
                 }
             }//Ends AirlockLightManager
+
+            public void VerifyAirlockSeal()
+            {
+                
+                if (AirlockAirVent.CanPressurize)
+                {
+                    AirlockSealCompromised = false;
+                }
+                else
+                {
+                    AirlockSealCompromised = true;
+                }
+
+            }//Ends VerifyAirlockSeal
 
             /*public void HangarInitialHardwareCheck()
             {
@@ -406,113 +676,7 @@ namespace IngameScript
 
             }//Ends HangarHardwareCheck*/
 
-            public IMyAirVent GetVent(string AirVentIdentifier)
-            {
-                IMyAirVent SearchedVent = null;
-
-                List<IMyAirVent> AllVents = new List<IMyAirVent>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Program.Me.CubeGrid);
-
-                foreach (IMyAirVent Vent in AllVents)
-                {
-                    string VentName = Vent.CustomName.ToLower();
-                    if (VentName.Contains(AirVentIdentifier.ToLower()))
-                    {
-                        SearchedVent = Vent;
-                    }
-                }
-
-                return SearchedVent;
-            }//Ends GetVent
-
-            public void GetDoors(string DoorHardwareIdentifier, List<IMyDoor> DoorList)
-            {
-                List<IMyDoor> AllDoors = new List<IMyDoor>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Program.Me.CubeGrid);
-
-                //Check for exterior doors, and add door to list if name contains identifier
-                foreach (IMyDoor Door in AllDoors)
-                {
-                    //Ensure both the name and identifier are lowercase for comparison
-                    string DoorName = Door.CustomName.ToLower();
-                    if (DoorName.Contains(DoorHardwareIdentifier.ToLower()))
-                    {
-                        DoorList.Add(Door);
-                    }
-                }
-            }//Ends GetDoor
-
-            public void AdditionalHardwareCheck()
-            {
-                AirlockStatusLightGroup.Clear();
-                AirlockDisplays.Clear();
-                PrimaryOxygenTank = null;
-                ExternalAirVent = null;
-                DisplaysProvided = false;
-                AnimationComplete = false;
-                TickCounter = 0;
-
-                ExternalAirVent = GetVent("External Air Vent");
-
-                //Check for primary oxygen tank
-                List<IMyGasTank> AllGasTanks = new List<IMyGasTank>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllGasTanks, Tank => Tank.CubeGrid == Program.Me.CubeGrid);
-                string TankIdentifier = "Primary Oxygen Tank";
-                foreach (IMyGasTank Tank in AllGasTanks)
-                {
-                    string TankName = Tank.CustomName.ToLower();
-                    if (TankName.Contains(TankIdentifier.ToLower()))
-                    {
-                        PrimaryOxygenTank = Tank;
-                        break;
-                    }
-                }
-
-                //Check for seperate displays
-                List<IMyTextPanel> AllDisplays = new List<IMyTextPanel>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllDisplays, Display => Display.CubeGrid == Program.Me.CubeGrid);
-                string DisplayIdentifier = HardwareIdentifier + " Airlock Display";
-                foreach (IMyTextPanel Display in AllDisplays)
-                {
-                    string DisplayName = Display.CustomName.ToLower();
-                    if (DisplayName.Contains(DisplayIdentifier.ToLower()))
-                    {
-                        AirlockDisplays.Add(Display);
-                    }
-                }
-
-                //Check for status lights
-                List<IMyInteriorLight> AllLights = new List<IMyInteriorLight>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllLights, Light => Light.CubeGrid == Program.Me.CubeGrid);
-                string LightIdentifier = HardwareIdentifier + " Status";
-                foreach (IMyInteriorLight Light in AllLights)
-                {
-                    string LightName = Light.CustomName.ToLower();
-                    if (LightName.Contains(LightIdentifier.ToLower()))
-                    {
-                        AirlockStatusLightGroup.Add(Light);
-                    }
-                }
-
-                //Check for button panel screens
-                List<IMyButtonPanel> AllButtonPanels = new List<IMyButtonPanel>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllButtonPanels, ButtonPanel => ButtonPanel.CubeGrid == Program.Me.CubeGrid);
-                string ButtonPanelIdentifier = "Button Panel";
-                foreach (IMyButtonPanel ButtonPanel in AllButtonPanels)
-                {
-                    string ButtonPanelName = ButtonPanel.CustomName.ToLower();
-                    if (ButtonPanelName.Contains(HardwareIdentifier.ToLower()) && ButtonPanelName.Contains(ButtonPanelIdentifier.ToLower()))
-                    {
-                        IMyTextSurfaceProvider SurfaceProvider = ButtonPanel as IMyTextSurfaceProvider;
-                        if (SurfaceProvider != null && SurfaceProvider.SurfaceCount > 0)
-                        {
-                            AirlockDisplays.Add(SurfaceProvider.GetSurface(0));
-                        }
-                    }
-                }
-
-            }//Ends AdditionalHardwareCheck
-
+            //Step Five
             public void WriteAirlockDisplays()
             {
                 if (DisplaysProvided)
@@ -698,31 +862,81 @@ namespace IngameScript
                 }
             }//Ends DrawDisplayUI
 
-            public Vector2 GetTextSizeInformation(IMyTextSurface Surface, string Text, float FontScale)
+            public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
-                Vector2 TextSize = Surface.MeasureStringInPixels(
-                new StringBuilder(Text),
-                "White",   // Font name
-                FontScale   // Font scale
-                );
+                //Start at Black, fade in
+                float LogoBrightness = (TickCounter <= 300) ? (TickCounter / 300f) : 1;
+                Color CurrentLogoColor = Color.Multiply(LogoColor, LogoBrightness);
 
-                return TextSize;
-            }//Ends GetTextSizeInformation
 
-            public void ExternalAtmosphereCheck()
-            {
-                if (ExternalAirVent == null)
+                var Surface = DisplayScreen;
+                Surface.ScriptBackgroundColor = Color.Black;
+                Surface.ContentType = ContentType.SCRIPT;
+                Surface.Script = "";
+
+                Vector2 TextureSize = Surface.TextureSize;
+                Vector2 CanvasSize = Surface.SurfaceSize;
+                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
+
+                //In case the surface is not square
+                float SmallerDimension = Math.Min(TextureSize.X, TextureSize.Y);
+
+                Vector2 TriangleSize = new Vector2(SmallerDimension * 0.5f, SmallerDimension * 0.5f);
+                Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
+
+                Vector2 TrianglePosition = new Vector2(TextureSize.X / 2f, (TextureSize.Y / 2f) + (BoxSize.Y / 2f));
+                Vector2 BoxPosition = new Vector2(TrianglePosition.X, TrianglePosition.Y + (TriangleSize.Y / 2f) - (BoxSize.Y / 2f) - 15f);
+
+                //Size is half the triangle width, and height is half since its half a circle
+                Vector2 SemiCircleSize = new Vector2(TriangleSize.X * 0.25f, TriangleSize.Y * 0.25f);
+                Vector2 SemiCirclePosition = new Vector2(TrianglePosition.X, TrianglePosition.Y - (SemiCircleSize.Y / 2f));
+
+                using (var frame = Surface.DrawFrame())
                 {
-                    return;
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "Triangle",
+                        Position = TrianglePosition,
+                        Size = TriangleSize,
+                        Color = CurrentLogoColor,
+                        RotationOrScale = (float)Math.PI,
+                        Alignment = TextAlignment.CENTER
+                    });
+
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SquareSimple",
+                        Size = BoxSize,
+                        Position = BoxPosition,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER
+                    });
+
+                    frame.Add(new MySprite()
+                    {
+                        Type = SpriteType.TEXTURE,
+                        Data = "SemiCircle",
+                        Size = SemiCircleSize,
+                        Position = SemiCirclePosition,
+                        Color = Color.Black,
+                        Alignment = TextAlignment.CENTER,
+                        RotationOrScale = (float)Math.PI
+                    });
                 }
 
-                //0.8f to reduce false positives
-                float ExternalOxygenLevel = ExternalAirVent.GetOxygenLevel();
-                AtmosphereCheck = (ExternalOxygenLevel >= 0.80f) ? true : false;
-            }//Ends CheckForAtmosphere
+                //Increment 10, as the script is Update10
+                TickCounter += 10;
+                if (TickCounter >= TOTAL_TICKS)
+                {
+                    return true; //Animation Complete
+                }
 
-            //ProcessCycling should only carry out pressurization/depressurization
+                return false;
+            }//Ends LoadRedFoxAnimation
 
+            //Atmosphere Methods
             public void PressurizeAirlock()
             {
                 //Pressurizing
@@ -793,6 +1007,7 @@ namespace IngameScript
                 }
             }//Ends DepressurizeHangar
 
+            //Cycle Methods
             public void CycleHangarInterior()
             {
                 if (!HangarDoorsClosed)
@@ -1012,41 +1227,6 @@ namespace IngameScript
                     }
                 }
             }//Ends CycleExterior
-            public void UpdateVariableLabelNames()
-            {
-                AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
-                AirlockTargetCyclingStatusName = CyclingStatusNames[AirlockTargetCyclingStatusNumber];
-
-                HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
-                HangarTargetCyclingStatusName = CyclingStatusNames[HangarTargetCyclingStatusNumber];
-
-                if (AACF)
-                {
-                    AACFName = "Enabled";
-                }
-                else
-                {
-                    AACFName = "Disabled";
-                }
-
-                if (ACCF)
-                {
-                    ACCFName = "Enabled";
-                }
-                else
-                {
-                    ACCFName = "Disabled";
-                }
-
-                if (HACF)
-                {
-                    HACFName = "Enabled";
-                }
-                else
-                {
-                    HACFName = "Disabled";
-                }
-            }//Update Variable Names
 
             public bool OpenDoors(List<IMyDoor> DoorGroup)
             {
@@ -1058,93 +1238,6 @@ namespace IngameScript
 
                 return false;
             }//Ends OpenDoors
-
-            public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
-            {
-                //Start at Black, fade in
-                float LogoBrightness = (TickCounter <= 300) ? (TickCounter / 300f) : 1;
-                Color CurrentLogoColor = Color.Multiply(LogoColor, LogoBrightness);
-
-
-                var Surface = DisplayScreen;
-                Surface.ScriptBackgroundColor = Color.Black;
-                Surface.ContentType = ContentType.SCRIPT;
-                Surface.Script = "";
-
-                Vector2 TextureSize = Surface.TextureSize;
-                Vector2 CanvasSize = Surface.SurfaceSize;
-                Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2f;
-
-                //In case the surface is not square
-                float SmallerDimension = Math.Min(TextureSize.X, TextureSize.Y);
-
-                Vector2 TriangleSize = new Vector2(SmallerDimension * 0.5f, SmallerDimension * 0.5f);
-                Vector2 BoxSize = new Vector2(CanvasSize.X, TriangleSize.Y * 0.25f);
-
-                Vector2 TrianglePosition = new Vector2(TextureSize.X / 2f, (TextureSize.Y / 2f) + (BoxSize.Y / 2f));
-                Vector2 BoxPosition = new Vector2(TrianglePosition.X, TrianglePosition.Y + (TriangleSize.Y / 2f) - (BoxSize.Y / 2f) - 15f);
-
-                //Size is half the triangle width, and height is half since its half a circle
-                Vector2 SemiCircleSize = new Vector2(TriangleSize.X * 0.25f, TriangleSize.Y * 0.25f);
-                Vector2 SemiCirclePosition = new Vector2(TrianglePosition.X, TrianglePosition.Y - (SemiCircleSize.Y / 2f));
-
-                using (var frame = Surface.DrawFrame())
-                {
-                    frame.Add(new MySprite()
-                    {
-                        Type = SpriteType.TEXTURE,
-                        Data = "Triangle",
-                        Position = TrianglePosition,
-                        Size = TriangleSize,
-                        Color = CurrentLogoColor,
-                        RotationOrScale = (float)Math.PI,
-                        Alignment = TextAlignment.CENTER
-                    });
-
-                    frame.Add(new MySprite()
-                    {
-                        Type = SpriteType.TEXTURE,
-                        Data = "SquareSimple",
-                        Size = BoxSize,
-                        Position = BoxPosition,
-                        Color = Color.Black,
-                        Alignment = TextAlignment.CENTER
-                    });
-
-                    frame.Add(new MySprite()
-                    {
-                        Type = SpriteType.TEXTURE,
-                        Data = "SemiCircle",
-                        Size = SemiCircleSize,
-                        Position = SemiCirclePosition,
-                        Color = Color.Black,
-                        Alignment = TextAlignment.CENTER,
-                        RotationOrScale = (float)Math.PI
-                    });
-                }
-
-                //Increment 10, as the script is Update10
-                TickCounter += 10;
-                if (TickCounter >= TOTAL_TICKS)
-                {
-                    return true; //Animation Complete
-                }
-
-                return false;
-            }//Ends LoadRedFoxAnimation
-
-            public void ACFManager()
-            {
-                //If airlock is in default mode, then if there is external atmosphere, disable AACF
-                if (AirlockMode == 1)
-                {
-                    AACF = (AtmosphereCheck) ? false : true;
-                }
-                else if (AirlockMode == 2)
-                {
-                    HACF = (AtmosphereCheck) ? false : true;
-                }
-            }
 
             public void IdleAirlock()
             {
@@ -1167,87 +1260,6 @@ namespace IngameScript
                 }
 
             }//Ends IdleHangar
-
-            public void InitialHardwareSetup()
-            {
-                int InitializedBlockCount = 0;
-
-                string AirlockVentIdentifier = $"{HardwareIdentifier} Air Vent";
-                string ExteriorDoorIdentifier = $"{ HardwareIdentifier} Exterior";
-                string InteriorDoorIdentifier = $"{ HardwareIdentifier} Interior";
-
-                ExteriorAirlockDoors.Clear();
-                InteriorAirlockDoors.Clear();
-
-                //Check for exterior door(s)
-                GetDoors(ExteriorDoorIdentifier, ExteriorAirlockDoors);
-                if (ExteriorAirlockDoors.Count == 0)
-                {
-                    Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
-                }
-                else
-                {
-                    InitializedBlockCount++;
-                }
-
-                //Check for interior door(s)
-                GetDoors(InteriorDoorIdentifier, InteriorAirlockDoors);
-                if (InteriorAirlockDoors.Count == 0)
-                {
-                    Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
-                }
-                else
-                {
-                    InitializedBlockCount++;
-                }
-
-                //Check for necessary air vent
-                AirlockAirVent = GetVent(AirlockVentIdentifier);
-                if (AirlockAirVent == null)
-                {
-                    Program.Echo($"Missing {HardwareIdentifier} Airlock Air Vent");
-                }
-                else
-                {
-                    InitializedBlockCount++;
-                }
-
-                bool InitializationSuccess = (InitializedBlockCount == 3) ? true : false;
-                InitialSetupComplete = InitializationSuccess;
-
-                //Initial Setup once necessary blocks are assigned
-                if (InitializationSuccess)
-                {
-                    AllAirlockDoors.AddRange(ExteriorAirlockDoors);
-                    AllAirlockDoors.AddRange(InteriorAirlockDoors);
-                    //Check for additional hardware one time after initialization
-                    AdditionalHardwareCheck();
-                    UpdateAirlockInformation();
-
-                    //Cycle Initially.
-                    AirlockCycleRequested = true;
-
-                    if (AirlockAirVent.GetOxygenLevel() >= 0.95)
-                    {
-                        AirlockTargetCyclingStatusNumber = 0; //Interior to begin
-                        CycleAirlockInterior();
-                    }
-                    else
-                    {
-                        AirlockTargetCyclingStatusNumber = 2; //Exterior to begin
-                        CycleAirlockExterior();
-                    }
-
-                    //Update Lights
-                    AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
-                }
-
-            }//Ends InitialBlockSetup
-
-            public string GetHardwareIdentifier()
-            {
-                return HardwareIdentifier;
-            } //Ends GetHardwareIdentifier
 
         }// Ends Airlock Class
 
@@ -1297,17 +1309,16 @@ namespace IngameScript
                     return;
                 }
 
-                Airlock.UpdateVariableLabelNames();
                 Airlock.UpdateAirlockInformation();
+                PassArguments(Airlock, argument);
                 Airlock.ProcessCycling();
                 Airlock.UpdateLights();
                 Airlock.WriteAirlockDisplays();
             }
 
-            DistributeArguments(argument);
         }//Ends Main
 
-        public void DistributeArguments(string Argument)
+        public void PassArguments(Airlock Airlock, string Argument)
         {
             if (!(string.IsNullOrEmpty(Argument)))
             {
@@ -1316,16 +1327,13 @@ namespace IngameScript
                 //ArgumentParts[0] = ID, ArgumentParts[1] = Command
                 string[] ArgumentParts = Argument.Split(':');
 
-                foreach (Airlock Airlock in Airlocks)
+                string AirlockID = Airlock.GetHardwareIdentifier().ToLower();
+                if (ArgumentParts[0] == AirlockID)
                 {
-                    string AirlockID = Airlock.GetHardwareIdentifier().ToLower();
-                    if (ArgumentParts[0] == AirlockID)
+                    if (ArgumentParts.Length > 1)
                     {
-                        if (ArgumentParts.Length > 1)
-                        {
-                            string Command = ArgumentParts[1];
-                            Airlock.ProcessArguments(Command);
-                        }
+                        string Command = ArgumentParts[1];
+                        Airlock.ProcessArguments(Command);
                     }
                 }
             }
