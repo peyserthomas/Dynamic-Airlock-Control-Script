@@ -343,6 +343,22 @@ namespace IngameScript
                 AACF = (AtmosphereCheck) ? false : true;
                 HACF = (AtmosphereCheck) ? false : true;
 
+                if (AirlockAirVent.GetOxygenLevel() >= 0.98)
+                {
+                    AirlockAtmosphereStatusNumber = 1; //Pressurized
+                    AirlockLightStatusNumber = 1; //Pressurized
+                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                    AirlockPressurized = true;
+                }
+
+                if (AirlockAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                {
+                    AirlockAtmosphereStatusNumber = 3; //Depressurized
+                    AirlockLightStatusNumber = 3; //Depressurized
+                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
+                    AirlockPressurized = false;
+                }
+
             }//Emds ACFManager
 
             public void ExternalAtmosphereCheck()
@@ -504,6 +520,7 @@ namespace IngameScript
                         }
 
                         AirlockCyclingStatusNumber = 1; //Set current status to cycling
+                        AirlockSealVerified = false;
                     }
                     else
                     {
@@ -539,6 +556,7 @@ namespace IngameScript
                     }
                     else
                     {
+
                         if (AirlockTargetCyclingStatusNumber == 0)
                         {
                             CycleHangarInterior();
@@ -590,6 +608,7 @@ namespace IngameScript
 
             public void VerifyAirlockSeal()
             {
+                AirlockSealVerified = false;
                 bool AllDoorsClosed = true;
                 bool AirlockAirtight = false;
 
@@ -934,14 +953,6 @@ namespace IngameScript
                 AirlockLightStatusNumber = 0;
                 AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
                 AirlockAirVent.Depressurize = false;
-
-                if (AirlockAirVent.GetOxygenLevel() >= 0.98)
-                {
-                    AirlockAtmosphereStatusNumber = 1; //Pressurized
-                    AirlockLightStatusNumber = 1; //Pressurized
-                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
-                    AirlockPressurized = true;
-                }
             }//Ends PressurizeAirlock
 
             public void DepressurizeAirlock()
@@ -951,15 +962,6 @@ namespace IngameScript
                 AirlockLightStatusNumber = 2;
                 AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
                 AirlockAirVent.Depressurize = true;
-
-
-                if (AirlockAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
-                {
-                    AirlockAtmosphereStatusNumber = 3; //Depressurized
-                    AirlockLightStatusNumber = 3; //Depressurized
-                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
-                    AirlockPressurized = false;
-                }
             }//Ends DepressurizeAirlock
 
             public void PressurizeHangar()
