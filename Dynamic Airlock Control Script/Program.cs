@@ -9,7 +9,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -53,7 +53,7 @@ namespace IngameScript
             bool AirlockPressurized = false;
             bool HangarPressurized = false;
 
-            bool AirlockSealCompromised = true;
+            bool AirlockSealVerified = false;
 
             bool AirlockCycleRequested = false;
             bool HangarCycleRequested = false;
@@ -206,19 +206,8 @@ namespace IngameScript
                     //Cycle Initially.
                     AirlockCycleRequested = true;
 
-                    if (AirlockAirVent.GetOxygenLevel() >= 0.95)
-                    {
-                        AirlockTargetCyclingStatusNumber = 0; //Interior to begin
-                        CycleAirlockInterior();
-                    }
-                    else
-                    {
-                        AirlockTargetCyclingStatusNumber = 2; //Exterior to begin
-                        CycleAirlockExterior();
-                    }
-
-                    //Update Lights
-                    AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
+                    //Set status to Interior to begin
+                    AirlockCyclingStatusNumber = 0;
                 }
 
             }//Ends InitialBlockSetup
@@ -350,14 +339,10 @@ namespace IngameScript
                 ExternalAtmosphereCheck();
 
                 //If airlock is in default mode, then if there is external atmosphere, disable AACF
-                if (AirlockMode == 1)
-                {
-                    AACF = (AtmosphereCheck) ? false : true;
-                }
-                else if (AirlockMode == 2)
-                {
-                    HACF = (AtmosphereCheck) ? false : true;
-                }
+                //AtmosphereCheck will remain false even when there is no external airvent
+                AACF = (AtmosphereCheck) ? false : true;
+                HACF = (AtmosphereCheck) ? false : true;
+
             }//Emds ACFManager
 
             public void ExternalAtmosphereCheck()
@@ -504,13 +489,6 @@ namespace IngameScript
                     IdleAirlock();
                 }
 
-                //If Seal Compromised, return
-                if (AirlockSealCompromised)
-                {
-                    AirlockCycleRequested = false;
-                    return;
-                }
-
                 if (AirlockCycleRequested)
                 {
                     //Before cycling, Target cycle should already match current cycle
@@ -612,14 +590,26 @@ namespace IngameScript
 
             public void VerifyAirlockSeal()
             {
-                
+                bool AllDoorsClosed = true;
+                bool AirlockAirtight = false;
+
+                foreach (IMyDoor Door in AllAirlockDoors)
+                {
+                    if (Door.Status != DoorStatus.Closed)
+                    {
+                        AllDoorsClosed = false;
+                        break;
+                    }
+                }
+
                 if (AirlockAirVent.CanPressurize)
                 {
-                    AirlockSealCompromised = false;
+                    AirlockAirtight = true;
                 }
-                else
+
+                if (AllDoorsClosed && AirlockAirtight)
                 {
-                    AirlockSealCompromised = true;
+                    AirlockSealVerified = true;
                 }
 
             }//Ends VerifyAirlockSeal
@@ -740,7 +730,7 @@ namespace IngameScript
                 Surface.Script = "";
 
                 //Display Variables
-                float FontScale = 0.7f;
+                float FontScale = 0.5f;
                 Vector2 TextureSize = Surface.TextureSize;
                 Vector2 CanvasSize = Surface.SurfaceSize;
                 Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
@@ -1097,7 +1087,7 @@ namespace IngameScript
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (ExteriorAirlockDoors[0].Status == DoorStatus.Closed)
+                    if (AirlockSealVerified)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -1119,20 +1109,13 @@ namespace IngameScript
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
                             Door.ApplyAction("Open_Off");
-                        }                        
+                        }
+
+                        VerifyAirlockSeal();
                     }
                 }
                 else
                 {
-                    //Check when doors are closed to prevent false positives from space vaccuum
-                    VerifyAirlockSeal();
-                    if (AirlockSealCompromised)
-                    {
-                        AirlockCycleRequested = false;
-                        AirlockTargetCyclingStatusNumber = 2;
-                        return;
-                    }
-
                     if (AirlockInteriorDoorsClosed)
                     {
                         //If no external atmosphere, pressurize airlock
@@ -1165,7 +1148,7 @@ namespace IngameScript
                     //Close doors first, then check if they are closed
                     //Use door #1 for comparison, as it must exist after initialization
                     //Check exterior doors as the interior doors will be closed already
-                    if (InteriorAirlockDoors[0].Status == DoorStatus.Closed)
+                    if (AirlockSealVerified)
                     {
                         foreach (IMyDoor Door in AllAirlockDoors)
                         {
@@ -1188,17 +1171,12 @@ namespace IngameScript
                         {
                             Door.ApplyAction("Open_Off");
                         }
+
+                        VerifyAirlockSeal();
                     }
                 }
                 else
                 {
-                    VerifyAirlockSeal();
-                    if (AirlockSealCompromised)
-                    {
-                        AirlockCycleRequested = false;
-                        AirlockTargetCyclingStatusNumber = 2;
-                        return;
-                    }
 
                     if (AirlockExteriorDoorsClosed)
                     {
