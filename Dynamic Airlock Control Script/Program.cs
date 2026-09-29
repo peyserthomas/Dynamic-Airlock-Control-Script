@@ -343,6 +343,11 @@ namespace IngameScript
                 AACF = (AtmosphereCheck) ? false : true;
                 HACF = (AtmosphereCheck) ? false : true;
 
+                if (AirlockAtmosphereStatusNumber == 0 || AirlockAtmosphereStatusNumber == 2)
+                {
+                    return; //Do not update status if currently pressurizing or depressurizing
+                }
+
                 if (AirlockAirVent.GetOxygenLevel() >= 0.98)
                 {
                     AirlockAtmosphereStatusNumber = 1; //Pressurized
@@ -351,7 +356,7 @@ namespace IngameScript
                     AirlockPressurized = true;
                 }
 
-                if (AirlockAirVent.GetOxygenLevel() <= 0.1 || OxygenTankFull)
+                if (AirlockAirVent.GetOxygenLevel() <= 0.1)
                 {
                     AirlockAtmosphereStatusNumber = 3; //Depressurized
                     AirlockLightStatusNumber = 3; //Depressurized
