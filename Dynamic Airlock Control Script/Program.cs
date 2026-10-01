@@ -155,11 +155,11 @@ namespace IngameScript
                 string ExteriorDoorIdentifier = $"{HardwareIdentifier} Exterior";
                 string InteriorDoorIdentifier = $"{HardwareIdentifier} Interior";
 
-                ExteriorAirlockDoors.Clear();
-                InteriorAirlockDoors.Clear();
-
                 //Check for exterior door(s)
-                GetDoors(ExteriorDoorIdentifier, ExteriorAirlockDoors);
+                ExteriorAirlockDoors = FindBlocks<IMyDoor>(ExteriorDoorIdentifier);
+                InteriorAirlockDoors = FindBlocks<IMyDoor>(InteriorDoorIdentifier);
+                AirlockAirVent = FindBlock<IMyAirVent>(AirlockVentIdentifier);
+
                 if (ExteriorAirlockDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Exterior Door(s)");
@@ -169,8 +169,6 @@ namespace IngameScript
                     InitializedBlockCount++;
                 }
 
-                //Check for interior door(s)
-                GetDoors(InteriorDoorIdentifier, InteriorAirlockDoors);
                 if (InteriorAirlockDoors.Count == 0)
                 {
                     Program.Echo($"Provide {HardwareIdentifier} Interior Door(s)");
@@ -180,8 +178,6 @@ namespace IngameScript
                     InitializedBlockCount++;
                 }
 
-                //Check for necessary air vent
-                AirlockAirVent = GetVent(AirlockVentIdentifier);
                 if (AirlockAirVent == null)
                 {
                     Program.Echo($"Missing {HardwareIdentifier} Airlock Air Vent");
@@ -223,41 +219,18 @@ namespace IngameScript
                 return InitialSetupComplete;
             }//Ends GetCompletionStatus
 
-            public IMyAirVent GetVent(string AirVentIdentifier)
+            public List<T> FindBlocks<T>(string Identifier) where T : class, IMyTerminalBlock
             {
-                IMyAirVent SearchedVent = null;
+                List<T> Found = new List<T>();
+                string StandardizedIdentifier = Identifier.ToLower();
+                Program.GridTerminalSystem.GetBlocksOfType<T>(Found, Block => Block.CubeGrid == Program.Me.CubeGrid && Block.CustomName.ToLower().Contains(StandardizedIdentifier));
+                return Found;
+            }//Ends FindBlocks
 
-                List<IMyAirVent> AllVents = new List<IMyAirVent>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllVents, Vent => Vent.CubeGrid == Program.Me.CubeGrid);
-
-                foreach (IMyAirVent Vent in AllVents)
-                {
-                    string VentName = Vent.CustomName.ToLower();
-                    if (VentName.Contains(AirVentIdentifier.ToLower()))
-                    {
-                        SearchedVent = Vent;
-                    }
-                }
-
-                return SearchedVent;
-            }//Ends GetVent
-
-            public void GetDoors(string DoorHardwareIdentifier, List<IMyDoor> DoorList)
+            public T FindBlock<T>(string Identifier) where T : class, IMyTerminalBlock
             {
-                List<IMyDoor> AllDoors = new List<IMyDoor>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllDoors, Door => Door.CubeGrid == Program.Me.CubeGrid);
-
-                //Check for exterior doors, and add door to list if name contains identifier
-                foreach (IMyDoor Door in AllDoors)
-                {
-                    //Ensure both the name and identifier are lowercase for comparison
-                    string DoorName = Door.CustomName.ToLower();
-                    if (DoorName.Contains(DoorHardwareIdentifier.ToLower()))
-                    {
-                        DoorList.Add(Door);
-                    }
-                }
-            }//Ends GetDoor
+                return FindBlocks<T>(Identifier).FirstOrDefault();
+            }//Ends FindBlock
 
             public Vector2 GetTextSizeInformation(IMyTextSurface Surface, string Text, float FontScale)
             {
@@ -431,29 +404,19 @@ namespace IngameScript
 
             public void AdditionalHardwareCheck()
             {
-                AirlockStatusLightGroup.Clear();
-                AirlockDisplays.Clear();
                 PrimaryOxygenTank = null;
                 ExternalAirVent = null;
                 DisplaysProvided = false;
                 AnimationComplete = false;
                 TickCounter = 0;
 
-                ExternalAirVent = GetVent("External Air Vent");
+                string ExternalAirVentIdentifier = "External Air Vent";
+                string PrimaryOxygenTankIdentifier = "Primary Oxygen Tank";
+                string AirlockLightIdentifier = HardwareIdentifier + " Status";
 
-                //Check for primary oxygen tank
-                List<IMyGasTank> AllGasTanks = new List<IMyGasTank>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllGasTanks, Tank => Tank.CubeGrid == Program.Me.CubeGrid);
-                string TankIdentifier = "Primary Oxygen Tank";
-                foreach (IMyGasTank Tank in AllGasTanks)
-                {
-                    string TankName = Tank.CustomName.ToLower();
-                    if (TankName.Contains(TankIdentifier.ToLower()))
-                    {
-                        PrimaryOxygenTank = Tank;
-                        break;
-                    }
-                }
+                ExternalAirVent = FindBlock<IMyAirVent>(ExternalAirVentIdentifier);
+                PrimaryOxygenTank = FindBlock<IMyGasTank>(PrimaryOxygenTankIdentifier);
+                AirlockStatusLightGroup = FindBlocks<IMyInteriorLight>(AirlockLightIdentifier);
 
                 //Check for seperate displays
                 List<IMyTextPanel> AllDisplays = new List<IMyTextPanel>();
@@ -465,19 +428,6 @@ namespace IngameScript
                     if (DisplayName.Contains(DisplayIdentifier.ToLower()))
                     {
                         AirlockDisplays.Add(Display);
-                    }
-                }
-
-                //Check for status lights
-                List<IMyInteriorLight> AllLights = new List<IMyInteriorLight>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllLights, Light => Light.CubeGrid == Program.Me.CubeGrid);
-                string LightIdentifier = HardwareIdentifier + " Status";
-                foreach (IMyInteriorLight Light in AllLights)
-                {
-                    string LightName = Light.CustomName.ToLower();
-                    if (LightName.Contains(LightIdentifier.ToLower()))
-                    {
-                        AirlockStatusLightGroup.Add(Light);
                     }
                 }
 
