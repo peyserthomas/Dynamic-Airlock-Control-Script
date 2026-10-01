@@ -1138,9 +1138,10 @@ namespace IngameScript
 
         IMyGasTank PrimaryOxygenTank;
         IMyAirVent ExternalAirVent;
+        bool ExternalAirVentProvided = false;
+        bool PrimaryOxygenTankProvided = false;
         bool AtmosphereCheck = false;
         bool OxygenTankFull = false;
-        bool SharedHardwareProvided = false;
         double OxygenTankFillPercentage = 0;
 
         public Program()
@@ -1172,15 +1173,14 @@ namespace IngameScript
                 AirlocksConstructed = true;
             }
 
-            if (SharedHardwareProvided)
+            if (PrimaryOxygenTankProvided)
             {
-                UpdateShardHardwareStatistics();
+                CheckOxygenTankFillLevel();
             }
-            else
+            
+            if (ExternalAirVentProvided)
             {
-                AtmosphereCheck = false;
-                OxygenTankFull = false;
-                OxygenTankFillPercentage = 0;
+                ExternalAtmosphereCheck();
             }
 
             foreach (Airlock Airlock in Airlocks)
@@ -1193,7 +1193,7 @@ namespace IngameScript
                 }
 
                 Airlock.SetExternalAtmosphereStatus(AtmosphereCheck);
-                Airlock.SetOxygenTankStatistics(PrimaryOxygenTank != null, OxygenTankFull, OxygenTankFillPercentage);
+                Airlock.SetOxygenTankStatistics(PrimaryOxygenTankProvided, OxygenTankFull, OxygenTankFillPercentage);
 
                 Airlock.UpdateAirlockInformation();
                 PassArguments(Airlock, argument);
@@ -1219,17 +1219,30 @@ namespace IngameScript
 
         public void SharedHardwareCheck()
         {
-            SharedHardwareProvided = false;
             ExternalAirVent = FindBlock<IMyAirVent>("External Air Vent");
             PrimaryOxygenTank = FindBlock<IMyGasTank>("Primary Oxygen Tank");
-            if (ExternalAirVent != null || PrimaryOxygenTank != null) SharedHardwareProvided = true;
-        }//Ends SharedHardwareCheck
 
-        public void UpdateShardHardwareStatistics()
-        {
-            if (PrimaryOxygenTank != null) CheckOxygenTankFillLevel();
-            if (ExternalAirVent != null) ExternalAtmosphereCheck(); else AtmosphereCheck = false;
-        }//Ends UpdateSharedHardwareStatistics
+            if (ExternalAirVent != null)
+            {
+                ExternalAirVentProvided = true;
+            }
+            else
+            {
+                ExternalAirVentProvided = false;
+                AtmosphereCheck = false;
+            }
+
+            if (PrimaryOxygenTank != null)
+            {
+                PrimaryOxygenTankProvided = true;
+            }
+            else
+            {
+                PrimaryOxygenTankProvided = false;
+                OxygenTankFull = false;
+                OxygenTankFillPercentage = 0;
+            }
+        }//Ends SharedHardwareCheck
 
         public void CheckOxygenTankFillLevel()
         {
