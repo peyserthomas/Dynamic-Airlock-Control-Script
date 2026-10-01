@@ -737,7 +737,7 @@ namespace IngameScript
                 float CATextHeight = (AirlockCycling) ? TextHeight : (TextHeight * 3f);
                 Vector2 CATextPosition = new Vector2(CABoxPosition.X + Padding, CABoxPosition.Y - (CABoxSize.Y * 0.5f) + ((CABoxSize.Y - CATextHeight) * 0.5f));
 
-                Vector2 AtmosphereStatusTextPosition = new Vector2(CABoxPosition.X + CABoxSize.X + (Padding * 2f), CABoxPosition.Y - (CABoxSize.Y / 2f) + Padding);
+                Vector2 AtmosphereStatusTextPosition = new Vector2(CABoxPosition.X + CABoxSize.X + Padding, CABoxPosition.Y - (CABoxSize.Y / 2f) + Padding);
                 Vector2 CyclingStatusTextPosition = new Vector2(AtmosphereStatusTextPosition.X, CABoxPosition.Y - (CABoxSize.Y / 2f) + (CABoxSize.Y - (Padding * 4f) - (TextHeight * 3f)) + Padding + TextHeight);
                 Vector2 ModeStatusTextPosition = new Vector2(AtmosphereStatusTextPosition.X, CABoxPosition.Y - (CABoxSize.Y / 2f) + ((CABoxSize.Y - (Padding * 4f) - (TextHeight * 3f)) * 2f) + Padding + (TextHeight * 2f));
 
