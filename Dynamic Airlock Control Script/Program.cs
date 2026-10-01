@@ -37,11 +37,14 @@ namespace IngameScript
 
             //Animation Variables
             bool AnimationComplete = false;
-            int TickCounter = 0;
-            const int TOTAL_TICKS = 900; //15 seconds at 60 FPS
+            int AnimationTickCounter = 0;
+            const int TotalAnimationTicks = 900; //15 seconds at 60 FPS
+
+            int CurrentWaitingTicks = 0;
+            const int TotalWaitingTicks = 1800;
 
             //Non-changing variables
-            float Padding = 12f;
+            float Padding = 5f;
             float TextHeight;
 
             string HardwareIdentifier;
@@ -54,7 +57,7 @@ namespace IngameScript
             bool HangarPressurized = false;
 
             bool AirlockSealVerified = false;
-
+            bool AirlockCycling = false;
             bool AirlockCycleRequested = false;
             bool HangarCycleRequested = false;
 
@@ -69,11 +72,11 @@ namespace IngameScript
             bool OxygenTankFull = false;
             bool DisplaysProvided = false;
 
-            string [] AirlockModeNames = {"Default", "Hangar", "Maintenance"};
-            string [] AtmosphereStatusNames = {"Pressurizing", "Pressurized", "Depressurizing", "Depressurized", "Working"};
-            string [] CyclingStatusNames = {"Interior", "Cycling", "Exterior"};
-            string [] ACFNames = {"Enabled", "Disabled"};
-            string [] CCFNames = {"Enabled", "Disabled"};
+            string [] AirlockModeNames = {"DEFAULT", "HANGAR", "MAINTENANCE"};
+            string [] AtmosphereStatusNames = {"PRESSURIZING", "PRESSURIZED", "DEPRESSURIZING", "DEPRESSURIZED", "WORKING"};
+            string [] CyclingStatusNames = {"INTERIOR", "--", "EXTERIOR"};
+            string [] ACFNames = {"ENABLED", "DISABLED"};
+            string [] CCFNames = {"ENABLED", "DISABLED"};
 
             string AirlockModeName = "";
             string AirlockAtmosphereStatusName = "";
@@ -86,6 +89,8 @@ namespace IngameScript
             string HangarAtmosphereStatusName = "";
             string HangarCyclingStatusName = "";
             string HangarTargetCyclingStatusName = "";
+
+            string AirlockCyclingAvailabilityText = "";
 
             //Airlock blocks
             IMyAirVent AirlockAirVent;
@@ -138,6 +143,7 @@ namespace IngameScript
             
             Color CurrentAirlockLightColor;
             Color CurrentHangarLightColor;
+            Color CurrentAirlockAvailabilityStatusColor;
 
             //Constructor
             public Airlock(Program program, string HardwareTag)
@@ -287,36 +293,17 @@ namespace IngameScript
             {
                 AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
                 AirlockTargetCyclingStatusName = CyclingStatusNames[AirlockTargetCyclingStatusNumber];
+                AirlockModeName = AirlockModeNames[AirlockMode];
 
                 HangarCyclingStatusName = CyclingStatusNames[HangarCyclingStatusNumber];
                 HangarTargetCyclingStatusName = CyclingStatusNames[HangarTargetCyclingStatusNumber];
 
-                if (AACF)
-                {
-                    AACFName = "Enabled";
-                }
-                else
-                {
-                    AACFName = "Disabled";
-                }
+                AirlockCyclingAvailabilityText = (AirlockCycling) ? "CYCLING" : "READY\nTO\nCYCLE";
 
-                if (ACCF)
-                {
-                    ACCFName = "Enabled";
-                }
-                else
-                {
-                    ACCFName = "Disabled";
-                }
+                AACFName = (AACF) ? "ENABLED" : "DISABLED";
+                ACCFName = (ACCF) ? "ENABLED" : "DISABLED";
+                HACFName = (HACF) ? "ENABLED" : "DISABLED";
 
-                if (HACF)
-                {
-                    HACFName = "Enabled";
-                }
-                else
-                {
-                    HACFName = "Disabled";
-                }
             }//Update Variable Names
 
             public void CheckOxygenTankFillLevel()
@@ -343,16 +330,15 @@ namespace IngameScript
                 AACF = (AtmosphereCheck) ? false : true;
                 HACF = (AtmosphereCheck) ? false : true;
 
-                if (AirlockAtmosphereStatusNumber == 0 || AirlockAtmosphereStatusNumber == 2)
+                if (AirlockCycling)
                 {
                     return; //Do not update status if currently pressurizing or depressurizing
                 }
 
-                if (AirlockAirVent.GetOxygenLevel() >= 0.98)
+                if (AirlockAirVent.GetOxygenLevel() >= 0.75)
                 {
                     AirlockAtmosphereStatusNumber = 1; //Pressurized
                     AirlockLightStatusNumber = 1; //Pressurized
-                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
                     AirlockPressurized = true;
                 }
 
@@ -360,9 +346,10 @@ namespace IngameScript
                 {
                     AirlockAtmosphereStatusNumber = 3; //Depressurized
                     AirlockLightStatusNumber = 3; //Depressurized
-                    AirlockAtmosphereStatusName = AtmosphereStatusNames[AirlockAtmosphereStatusNumber];
                     AirlockPressurized = false;
                 }
+
+                AirlockAtmosphereStatusName = (AACF) ? AtmosphereStatusNames[AirlockAtmosphereStatusNumber] : $"AACF {AACFName}";
 
             }//Emds ACFManager
 
@@ -437,7 +424,7 @@ namespace IngameScript
                 ExternalAirVent = null;
                 DisplaysProvided = false;
                 AnimationComplete = false;
-                TickCounter = 0;
+                AnimationTickCounter = 0;
 
                 ExternalAirVent = GetVent("External Air Vent");
 
@@ -525,6 +512,7 @@ namespace IngameScript
                         }
 
                         AirlockCyclingStatusNumber = 1; //Set current status to cycling
+                        AirlockCycling = true;
                         AirlockSealVerified = false;
                     }
                     else
@@ -578,9 +566,11 @@ namespace IngameScript
             //Step Four
             public void UpdateLights()
             {
-                Color[] LightColors = { Yellow, Green, Red, Red, Orange, Orange };
+                Color[] LightColors = {Yellow, Green, Red, Red, Orange, Orange };
                 CurrentAirlockLightColor = LightColors[AirlockLightStatusNumber];
                 CurrentHangarLightColor = LightColors[HangarLightStatusNumber];
+                CurrentAirlockAvailabilityStatusColor = (AirlockCycling) ? LightColors[0] : LightColors[1];
+
                 AirlockLightManager(AirlockStatusLightGroup, AirlockLightStatusNumber, CurrentAirlockLightColor);
 
                 if (AirlockMode == 1)
@@ -595,6 +585,8 @@ namespace IngameScript
                 float CurrentBlinkTime = AirlockLightBlinkIntervals[LightStatusNumber];
                 float CurrentBlinkLength = AirlockLightsBlinkLengths[LightStatusNumber];
                 float CurrentBlinkOffset = AirlockLightsBlinkOffsets[LightStatusNumber];
+
+
 
                 if (LightGroup.Count == 0)
                 {
@@ -711,41 +703,7 @@ namespace IngameScript
                     return;
                 }
 
-                string AirlockTitle = $"{HardwareIdentifier} Airlock";
-
-                //Oxygen tank data
-                string OxygenTankTitle = "Oxygen Tank";
-                Color OxygenTankColor = (PrimaryOxygenTank != null) ? Color.White : CustomGrey;
-                Color OxygenTankFillBoxColor = Color.Red;
-                int NumberOfFillBoxes = 0;
-                if (PrimaryOxygenTank != null)
-                {
-                    if (OxygenTankFillPercentage >= 75)
-                    {
-                        NumberOfFillBoxes = 4;
-                        OxygenTankFillBoxColor = Color.Blue;
-                    }
-                    else if (OxygenTankFillPercentage >= 50)
-                    {
-                        NumberOfFillBoxes = 3;
-                        OxygenTankFillBoxColor = Color.Green;
-                    }
-                    else if (OxygenTankFillPercentage >= 25)
-                    {
-                        NumberOfFillBoxes = 2;
-                        OxygenTankFillBoxColor = Color.Yellow;
-                    }
-                    else if (OxygenTankFillPercentage > 1)
-                    {
-                        NumberOfFillBoxes = 1;
-                        OxygenTankFillBoxColor = Color.Red;
-                    }
-                    else
-                    {
-                        NumberOfFillBoxes = 0;
-
-                    }
-                }
+                string AirlockTitle = $"{HardwareIdentifier} AIRLOCK CONTROL TERMINAL";
 
                 //Initial Setup of display
                 var Surface = DisplayScreen;
@@ -758,7 +716,6 @@ namespace IngameScript
                 Vector2 TextureSize = Surface.TextureSize;
                 Vector2 CanvasSize = Surface.SurfaceSize;
                 Vector2 ViewPortOffset = (TextureSize - CanvasSize) / 2;
-                Vector2 UsableSurfaceArea = new Vector2(CanvasSize.X - (Padding * 2f), CanvasSize.Y - (Padding * 2f));
 
                 //Get height of text as a float
                 Vector2 TextSize = Surface.MeasureStringInPixels(
@@ -768,44 +725,31 @@ namespace IngameScript
                 );
 
                 TextHeight = TextSize.Y;
+                //Title Sprite Data
+                Vector2 TitleBoxSize = new Vector2((ViewPortOffset.X + CanvasSize.X) - (Padding * 2f), TextHeight + (Padding * 2f));
+                Vector2 TitleBoxPosition = new Vector2(ViewPortOffset.X + Padding, ViewPortOffset.Y + (Padding * 2f) + (TextHeight / 2f));
+                Vector2 AirlockTitlePosition = new Vector2((Padding * 2f) + ViewPortOffset.X, ViewPortOffset.Y + (Padding * 2f));
 
-                //Includes Padding and Viewportoffset
-                Vector2 TextStart = new Vector2((ViewPortOffset.X) + Padding, (ViewPortOffset.Y + Padding));
-                Vector2 AirlockTitleSize = GetTextSizeInformation(DisplayScreen, AirlockTitle, FontScale);
-                Vector2 AirlockTitlePosition = new Vector2(Padding + ViewPortOffset.X + (AirlockTitleSize.X / 2f), TextStart.Y);
+                //Cycling Availability Position and Size
+                Vector2 CABoxSize = new Vector2(CanvasSize.X * 0.25f, (CanvasSize.Y - (TitleBoxSize.Y + Padding) - (Padding * 3f)) * 0.5f);
+                Vector2 CABoxPosition = new Vector2(TitleBoxPosition.X, ViewPortOffset.Y + TitleBoxSize.Y + (Padding * 2f) + (CABoxSize.Y / 2f));
 
-                //Status Box and Text Data
-                Vector2 StatusTextSize = GetTextSizeInformation(DisplayScreen, AirlockAtmosphereStatusName, FontScale);
-                Vector2 StatusTextPosition = new Vector2(TextStart.X + (StatusTextSize.X / 2f), TextStart.Y + TextHeight + Padding);
-                Vector2 StatusBoxPosition = new Vector2(ViewPortOffset.X + CanvasSize.X - Padding - StatusTextSize.Y, StatusTextPosition.Y + (StatusTextSize.Y / 2f));
-                Vector2 StatusBoxSize = new Vector2(StatusTextSize.Y, StatusTextSize.Y);
+                float CATextHeight = (AirlockCycling) ? TextHeight : (TextHeight * 3f);
+                Vector2 CATextPosition = new Vector2(CABoxPosition.X + Padding, CABoxPosition.Y - (CABoxSize.Y * 0.5f) + ((CABoxSize.Y - CATextHeight) * 0.5f));
 
-                //Oxygen Sprite Data
-                Vector2 TitleBoxSize = new Vector2(ViewPortOffset.X + (Padding / 2f) + UsableSurfaceArea.X, TextHeight + Padding);
-                Vector2 TitleBoxPosition = new Vector2(ViewPortOffset.X + (Padding / 2f), ViewPortOffset.Y + Padding + (TextHeight / 2f));
-
-                //Oxygen Sprite Data
-                Vector2 OxygenTankTitleSize = GetTextSizeInformation(DisplayScreen, OxygenTankTitle, FontScale);
-                Vector2 OxygenTankTitlePosition = new Vector2(TextStart.X + (OxygenTankTitleSize.X / 2f), ViewPortOffset.Y + CanvasSize.Y - Padding - TextHeight);
-                Vector2 OxygenTankBoxPosition = new Vector2(TextStart.X + Padding + OxygenTankTitleSize.X, ViewPortOffset.Y + CanvasSize.Y - Padding - (TextHeight / 2f));
-                float OxygenTankBoxWith = UsableSurfaceArea.X - (OxygenTankTitleSize.X + Padding);
-                Vector2 OxygenTankBoxSize = new Vector2(OxygenTankBoxWith, TextHeight);
-
-                //Oxygen tank fill boxes data
-                float OxygenTankFillBoxWidth = (OxygenTankBoxWith - (3f * 5f)) / 4f;
-                Vector2 OxygenTankFillBoxSize = new Vector2(OxygenTankFillBoxWidth, OxygenTankBoxSize.Y);
-                Vector2 OxygenTankFillBoxPosition = new Vector2(OxygenTankBoxPosition.X, OxygenTankBoxPosition.Y);
+                Vector2 AtmosphereStatusTextPosition = new Vector2(CABoxPosition.X + CABoxSize.X + (Padding * 2f), CABoxPosition.Y - (CABoxSize.Y / 2f) + Padding);
+                Vector2 CyclingStatusTextPosition = new Vector2(AtmosphereStatusTextPosition.X, CABoxPosition.Y - (CABoxSize.Y / 2f) + (CABoxSize.Y - (Padding * 4f) - (TextHeight * 3f)) + Padding + TextHeight);
+                Vector2 ModeStatusTextPosition = new Vector2(AtmosphereStatusTextPosition.X, CABoxPosition.Y - (CABoxSize.Y / 2f) + ((CABoxSize.Y - (Padding * 4f) - (TextHeight * 3f)) * 2f) + Padding + (TextHeight * 2f));
 
                 using (var Frame = Surface.DrawFrame())
                 {
-
                     Frame.Add(new MySprite() //Title Box
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "SquareSimple",
                         Position = TitleBoxPosition,
                         Size = TitleBoxSize,
-                        Color = Color.Blue
+                        Color = LogoColor
                     });
 
                     Frame.Add(new MySprite() // Airlock Title
@@ -814,72 +758,70 @@ namespace IngameScript
                         Data = AirlockTitle,
                         Position = AirlockTitlePosition,
                         RotationOrScale = FontScale,
-                        Alignment = TextAlignment.CENTER,
+                        Alignment = TextAlignment.LEFT,
                         Color = Color.White,
                         FontId = "White"
                     });
 
-                    Frame.Add(new MySprite() //Airlock Atmosphere Status Light Box
+                    Frame.Add(new MySprite() // Cycling Availability Box
                     {
                         Type = SpriteType.TEXTURE,
                         Data = "SquareSimple",
-                        Position = StatusBoxPosition,
-                        Size = StatusBoxSize,
-                        Color = CurrentAirlockLightColor
+                        Size = CABoxSize,
+                        Position = CABoxPosition,
+                        Color = CurrentAirlockAvailabilityStatusColor
                     });
 
-                    Frame.Add(new MySprite() //Airlock Status Text
+                    Frame.Add(new MySprite() // Cycling Availability Text
+                    {
+                        Type = SpriteType.TEXT,
+                        Data = AirlockCyclingAvailabilityText,
+                        Position = CATextPosition,
+                        RotationOrScale = FontScale,
+                        Alignment = TextAlignment.LEFT,
+                        Color = Color.Black,
+                        FontId = "Debug"
+                    });
+
+                    Frame.Add(new MySprite() // Atmosphere Status Text Box
                     {
                         Type = SpriteType.TEXT,
                         Data = AirlockAtmosphereStatusName,
-                        Position = StatusTextPosition,
+                        Position = AtmosphereStatusTextPosition,
                         RotationOrScale = FontScale,
+                        Alignment = TextAlignment.LEFT,
                         Color = Color.White,
-                        Alignment = TextAlignment.CENTER,
                         FontId = "White"
                     });
 
-                    if (PrimaryOxygenTank == null)
-                    {
-                        Frame.Add(new MySprite() //Oxygen Tank Box
-                        {
-                            Type = SpriteType.TEXTURE,
-                            Data = "SquareSimple",
-                            Position = OxygenTankBoxPosition,
-                            Size = OxygenTankBoxSize,
-                            Color = CustomGrey
-                        });
-                    }
-
-                    Frame.Add(new MySprite() //Oxygen Tank Text
+                    Frame.Add(new MySprite() // Cycling Status Text Box
                     {
                         Type = SpriteType.TEXT,
-                        Data = OxygenTankTitle,
-                        Position = OxygenTankTitlePosition,
+                        Data = AirlockCyclingStatusName,
+                        Position = CyclingStatusTextPosition,
                         RotationOrScale = FontScale,
-                        Color = OxygenTankColor,
-                        Alignment = TextAlignment.CENTER,
+                        Alignment = TextAlignment.LEFT,
+                        Color = Color.White,
                         FontId = "White"
                     });
 
-                    for (int i = 0; i < NumberOfFillBoxes; i++)
+                    Frame.Add(new MySprite() // Mode Status Text Box
                     {
-                        Frame.Add(new MySprite() //Oxygen Tank Box
-                        {
-                            Type = SpriteType.TEXTURE,
-                            Data = "SquareSimple",
-                            Position = new Vector2(OxygenTankFillBoxPosition.X + (i * (5f + OxygenTankFillBoxWidth)), OxygenTankFillBoxPosition.Y),
-                            Size = OxygenTankFillBoxSize,
-                            Color = OxygenTankFillBoxColor
-                        });
-                    }
+                        Type = SpriteType.TEXT,
+                        Data = $"MODE: {AirlockModeName}",
+                        Position = ModeStatusTextPosition,
+                        RotationOrScale = FontScale,
+                        Alignment = TextAlignment.LEFT,
+                        Color = Color.White,
+                        FontId = "White"
+                    });
                 }
             }//Ends DrawDisplayUI
 
             public bool LoadRedFoxAnimation(IMyTextSurface DisplayScreen)
             {
                 //Start at Black, fade in
-                float LogoBrightness = (TickCounter <= 300) ? (TickCounter / 300f) : 1;
+                float LogoBrightness = (AnimationTickCounter <= 300) ? (AnimationTickCounter / 300f) : 1;
                 Color CurrentLogoColor = Color.Multiply(LogoColor, LogoBrightness);
 
 
@@ -941,8 +883,8 @@ namespace IngameScript
                 }
 
                 //Increment 10, as the script is Update10
-                TickCounter += 10;
-                if (TickCounter >= TOTAL_TICKS)
+                AnimationTickCounter += 10;
+                if (AnimationTickCounter >= TotalAnimationTicks)
                 {
                     return true; //Animation Complete
                 }
@@ -1101,8 +1043,8 @@ namespace IngameScript
                             Door.Enabled = false;
                         }
 
-                        AirlockExteriorDoorsClosed = true;
-                        AirlockInteriorDoorsClosed = true;
+                        AirlockExteriorDoorsClosed = CheckDoorStatus(ExteriorAirlockDoors);
+                        AirlockInteriorDoorsClosed = CheckDoorStatus(InteriorAirlockDoors);
                     }
                     else
                     {
@@ -1139,10 +1081,14 @@ namespace IngameScript
                         {
                             AirlockInteriorDoorsClosed = OpenDoors(InteriorAirlockDoors);
                         }
+
+                        //Check Doors regardless of AACF
+                        AirlockExteriorDoorsClosed = CheckDoorStatus(ExteriorAirlockDoors);
                     }
                     else
                     {
                         AirlockCycleRequested = false;
+                        AirlockCycling = false;
                         AirlockCyclingStatusNumber = 0;
                     }
                 }
@@ -1162,8 +1108,8 @@ namespace IngameScript
                             Door.Enabled = false;
                         }
 
-                        AirlockInteriorDoorsClosed = true;
-                        AirlockExteriorDoorsClosed = true;
+                        AirlockExteriorDoorsClosed = CheckDoorStatus(ExteriorAirlockDoors);
+                        AirlockInteriorDoorsClosed = CheckDoorStatus(InteriorAirlockDoors);
                     }
                     else
                     {
@@ -1184,7 +1130,6 @@ namespace IngameScript
                 }
                 else
                 {
-
                     if (AirlockExteriorDoorsClosed)
                     {
                         //If no external atmosphere, depressurize airlock
@@ -1192,26 +1137,65 @@ namespace IngameScript
                         {
                             DepressurizeAirlock();
 
-                            if (!AirlockPressurized)
+                            if (PrimaryOxygenTank == null)
+                            {
+                                // If no oxygen tank is assigned to check, if the tank is full, then the depressurization will be indefinite
+                                AirlockPressurized = !(CountWaitingTime());
+                            }
+
+                            if (!AirlockPressurized || OxygenTankFull)
                             {
                                 AirlockExteriorDoorsClosed = OpenDoors(ExteriorAirlockDoors);
                             }
-
                         }
                         else
                         {
                             AirlockExteriorDoorsClosed = OpenDoors(ExteriorAirlockDoors);
                         }
+
+                        //Check Doors regardless of AACF
+                        AirlockExteriorDoorsClosed = CheckDoorStatus(ExteriorAirlockDoors);
                     }
                     else
                     {
                         //Once doors are closed and airlock is depressurized, complete cycle.
                         AirlockCycleRequested = false;
-                        AirlockCyclingStatusNumber = 2;
-                        AirlockCyclingStatusName = CyclingStatusNames[AirlockCyclingStatusNumber];
+                        AirlockCycling = false;
+                        AirlockCyclingStatusNumber = 2;;
                     }
                 }
             }//Ends CycleExterior
+
+            public bool CountWaitingTime()
+            {
+                bool TimeExceeded = false;
+
+                if (CurrentWaitingTicks >= TotalWaitingTicks)
+                {
+                    TimeExceeded = true;
+                    CurrentWaitingTicks = 0;
+                }
+                else
+                {
+                    CurrentWaitingTicks += 10;
+                }
+
+                return TimeExceeded;
+            }
+
+            public bool CheckDoorStatus(List <IMyDoor> DoorList)
+            {
+                bool DoorsClosed = true;
+                foreach(IMyDoor Door in DoorList)
+                {
+                    if (Door.Status != DoorStatus.Closed)
+                    {
+                        DoorsClosed = false;
+                    }
+                }
+
+                return DoorsClosed;
+            }//Ends CheckDoorStatus
 
             public bool OpenDoors(List<IMyDoor> DoorGroup)
             {
