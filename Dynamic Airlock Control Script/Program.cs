@@ -68,9 +68,10 @@ namespace IngameScript
             bool ACCF = true; //Airlock Cycling Control Functionality
             bool HACF = true; //Hangar Atmosphere Control Functionality
             
-            bool AtmosphereCheck = false;
-            bool OxygenTankFull = false;
             bool DisplaysProvided = false;
+            bool AtmosphereCheck = false;
+            bool OxygenTankProvided = false;
+            bool OxygenTankFull = false;
 
             string [] AirlockModeNames = {"DEFAULT", "HANGAR", "MAINTENANCE"};
             string [] AtmosphereStatusNames = {"PRESSURIZING", "PRESSURIZED", "DEPRESSURIZING", "DEPRESSURIZED", "WORKING"};
@@ -99,10 +100,6 @@ namespace IngameScript
             List<IMyDoor> ExteriorAirlockDoors = new List<IMyDoor>();
             List<IMyDoor> InteriorAirlockDoors = new List<IMyDoor>();
             List<IMyDoor> AllAirlockDoors = new List<IMyDoor>();
-
-            //Additional hardware blocks
-            IMyGasTank PrimaryOxygenTank;
-            IMyAirVent ExternalAirVent;
 
             //Additional hardware block lists
             List<IMyInteriorLight> AirlockStatusLightGroup = new List<IMyInteriorLight>();
@@ -162,9 +159,9 @@ namespace IngameScript
                 string InteriorDoorIdentifier = $"{HardwareIdentifier} Interior";
 
                 //Check for exterior door(s)
-                ExteriorAirlockDoors = FindBlocks<IMyDoor>(ExteriorDoorIdentifier);
-                InteriorAirlockDoors = FindBlocks<IMyDoor>(InteriorDoorIdentifier);
-                AirlockAirVent = FindBlock<IMyAirVent>(AirlockVentIdentifier);
+                ExteriorAirlockDoors = Program.FindBlocks<IMyDoor>(ExteriorDoorIdentifier);
+                InteriorAirlockDoors = Program.FindBlocks<IMyDoor>(InteriorDoorIdentifier);
+                AirlockAirVent = Program.FindBlock<IMyAirVent>(AirlockVentIdentifier);
 
                 if (ExteriorAirlockDoors.Count == 0)
                 {
@@ -215,6 +212,19 @@ namespace IngameScript
             }//Ends InitialBlockSetup
 
             //Getter Methods
+
+            public void SetExternalAtmosphereStatus(bool value)
+            {
+                AtmosphereCheck = value;
+            }//Ends SetExternalAtmosphereStatus
+
+            public void SetOxygenTankStatistics(bool Provided, bool Value, double FillPercentage)
+            {
+                OxygenTankProvided = Provided;
+                OxygenTankFull = Value;
+                OxygenTankFillPercentage = FillPercentage;
+            }//Ends SetOxygenTankStatistics
+
             public string GetHardwareIdentifier()
             {
                 return HardwareIdentifier;
@@ -224,19 +234,6 @@ namespace IngameScript
             {
                 return InitialSetupComplete;
             }//Ends GetCompletionStatus
-
-            public List<T> FindBlocks<T>(string Identifier) where T : class, IMyTerminalBlock
-            {
-                List<T> Found = new List<T>();
-                string StandardizedIdentifier = Identifier.ToLower();
-                Program.GridTerminalSystem.GetBlocksOfType<T>(Found, Block => Block.CubeGrid == Program.Me.CubeGrid && Block.CustomName.ToLower().Contains(StandardizedIdentifier));
-                return Found;
-            }//Ends FindBlocks
-
-            public T FindBlock<T>(string Identifier) where T : class, IMyTerminalBlock
-            {
-                return FindBlocks<T>(Identifier).FirstOrDefault();
-            }//Ends FindBlock
 
             public Vector2 GetTextSizeInformation(IMyTextSurface Surface, string Text, float FontScale)
             {
@@ -252,8 +249,6 @@ namespace IngameScript
             //Step One
             public void UpdateAirlockInformation()
             {
-                //Check if Oxygen tank fill level
-                CheckOxygenTankFillLevel();
                 //Update Atmosphere check and set AACF and HACF states.
                 ACFManager();
                 //Update Cycle and Atmosphere Status field names
@@ -279,25 +274,8 @@ namespace IngameScript
 
             }//Update Variable Names
 
-            public void CheckOxygenTankFillLevel()
-            {
-                if (PrimaryOxygenTank == null)
-                {
-                    return;
-                }
-
-                //Retrieve fill ration (0.0 to 1.0), then convert to percentage for comparison
-                double OxygenTankFillRatio = PrimaryOxygenTank.FilledRatio;
-                OxygenTankFillPercentage = OxygenTankFillRatio * 100;
-
-                OxygenTankFull = (OxygenTankFillPercentage >= 98);
-            }//Ends CheckOxygenTankLevel
-
             public void ACFManager()
             {
-                //Update Atmosphere Check
-                ExternalAtmosphereCheck();
-
                 //If airlock is in default mode, then if there is external atmosphere, disable AACF
                 //AtmosphereCheck will remain false even when there is no external airvent
                 AACF = (AtmosphereCheck) ? false : true;
@@ -325,18 +303,6 @@ namespace IngameScript
                 AirlockAtmosphereStatusName = (AACF) ? AtmosphereStatusNames[AirlockAtmosphereStatusNumber] : $"AACF {AACFName}";
 
             }//Emds ACFManager
-
-            public void ExternalAtmosphereCheck()
-            {
-                if (ExternalAirVent == null)
-                {
-                    return;
-                }
-
-                //0.8f to reduce false positives
-                float ExternalOxygenLevel = ExternalAirVent.GetOxygenLevel();
-                AtmosphereCheck = (ExternalOxygenLevel >= 0.80f) ? true : false;
-            }//Ends CheckForAtmosphere
 
             //Step Two
             public void ProcessArguments(string argument)
@@ -391,47 +357,26 @@ namespace IngameScript
 
             public void AdditionalHardwareCheck()
             {
-                PrimaryOxygenTank = null;
-                ExternalAirVent = null;
+                AirlockDisplays.Clear();
                 DisplaysProvided = false;
                 AnimationComplete = false;
                 AnimationTickCounter = 0;
 
-                string ExternalAirVentIdentifier = "External Air Vent";
-                string PrimaryOxygenTankIdentifier = "Primary Oxygen Tank";
                 string AirlockLightIdentifier = HardwareIdentifier + " Status";
+                AirlockStatusLightGroup = Program.FindBlocks<IMyInteriorLight>(AirlockLightIdentifier);
 
-                ExternalAirVent = FindBlock<IMyAirVent>(ExternalAirVentIdentifier);
-                PrimaryOxygenTank = FindBlock<IMyGasTank>(PrimaryOxygenTankIdentifier);
-                AirlockStatusLightGroup = FindBlocks<IMyInteriorLight>(AirlockLightIdentifier);
-
-                //Check for seperate displays
-                List<IMyTextPanel> AllDisplays = new List<IMyTextPanel>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllDisplays, Display => Display.CubeGrid == Program.Me.CubeGrid);
-                string DisplayIdentifier = HardwareIdentifier + " Airlock Display";
-                foreach (IMyTextPanel Display in AllDisplays)
+                //check if buttons have the right name and if they have a screen
+                foreach (IMyButtonPanel ButtonPanel in Program.FindBlocks<IMyButtonPanel>(HardwareIdentifier))
                 {
-                    string DisplayName = Display.CustomName.ToLower();
-                    if (DisplayName.Contains(DisplayIdentifier.ToLower()))
+                    if (!ButtonPanel.CustomName.ToLower().Contains("button panel"))
                     {
-                        AirlockDisplays.Add(Display);
+                        continue;
                     }
-                }
 
-                //Check for button panel screens
-                List<IMyButtonPanel> AllButtonPanels = new List<IMyButtonPanel>();
-                Program.GridTerminalSystem.GetBlocksOfType(AllButtonPanels, ButtonPanel => ButtonPanel.CubeGrid == Program.Me.CubeGrid);
-                string ButtonPanelIdentifier = "Button Panel";
-                foreach (IMyButtonPanel ButtonPanel in AllButtonPanels)
-                {
-                    string ButtonPanelName = ButtonPanel.CustomName.ToLower();
-                    if (ButtonPanelName.Contains(HardwareIdentifier.ToLower()) && ButtonPanelName.Contains(ButtonPanelIdentifier.ToLower()))
+                    IMyTextSurfaceProvider SurfaceProvider = ButtonPanel as IMyTextSurfaceProvider;
+                    if (SurfaceProvider != null && SurfaceProvider.SurfaceCount > 0)
                     {
-                        IMyTextSurfaceProvider SurfaceProvider = ButtonPanel as IMyTextSurfaceProvider;
-                        if (SurfaceProvider != null && SurfaceProvider.SurfaceCount > 0)
-                        {
-                            AirlockDisplays.Add(SurfaceProvider.GetSurface(0));
-                        }
+                        AirlockDisplays.Add(SurfaceProvider.GetSurface(0));
                     }
                 }
 
@@ -1087,7 +1032,7 @@ namespace IngameScript
                         {
                             DepressurizeAirlock();
 
-                            if (PrimaryOxygenTank == null)
+                            if (!OxygenTankProvided)
                             {
                                 // If no oxygen tank is assigned to check, if the tank is full, then the depressurization will be indefinite
                                 AirlockPressurized = !(CountWaitingTime());
@@ -1191,6 +1136,13 @@ namespace IngameScript
         IMyProgrammableBlock ProgrammableBlock;
         IMyCubeGrid CurrentGrid;
 
+        IMyGasTank PrimaryOxygenTank;
+        IMyAirVent ExternalAirVent;
+        bool AtmosphereCheck = false;
+        bool OxygenTankFull = false;
+        bool SharedHardwareProvided = false;
+        double OxygenTankFillPercentage = 0;
+
         public Program()
         {
             Runtime.UpdateFrequency = UpdateFrequency.Update10;
@@ -1215,8 +1167,20 @@ namespace IngameScript
             //Create airlocks once tags are provided
             if (!AirlocksConstructed)
             {
+                SharedHardwareCheck();
                 BuildAirlocks();
                 AirlocksConstructed = true;
+            }
+
+            if (SharedHardwareProvided)
+            {
+                UpdateShardHardwareStatistics();
+            }
+            else
+            {
+                AtmosphereCheck = false;
+                OxygenTankFull = false;
+                OxygenTankFillPercentage = 0;
             }
 
             foreach (Airlock Airlock in Airlocks)
@@ -1228,6 +1192,9 @@ namespace IngameScript
                     return;
                 }
 
+                Airlock.SetExternalAtmosphereStatus(AtmosphereCheck);
+                Airlock.SetOxygenTankStatistics(PrimaryOxygenTank != null, OxygenTankFull, OxygenTankFillPercentage);
+
                 Airlock.UpdateAirlockInformation();
                 PassArguments(Airlock, argument);
                 Airlock.ProcessCycling();
@@ -1236,6 +1203,50 @@ namespace IngameScript
             }
 
         }//Ends Main
+
+        public List<T> FindBlocks<T>(string Identifier) where T : class, IMyTerminalBlock
+        {
+            List<T> Found = new List<T>();
+            string StandardizedIdentifier = Identifier.ToLower();
+            GridTerminalSystem.GetBlocksOfType<T>(Found, Block => Block.CubeGrid == Me.CubeGrid && Block.CustomName.ToLower().Contains(StandardizedIdentifier));
+            return Found;
+        }//Ends FindBlocks
+
+        public T FindBlock<T>(string Identifier) where T : class, IMyTerminalBlock
+        {
+            return FindBlocks<T>(Identifier).FirstOrDefault();
+        }//Ends FindBlock
+
+        public void SharedHardwareCheck()
+        {
+            SharedHardwareProvided = false;
+            ExternalAirVent = FindBlock<IMyAirVent>("External Air Vent");
+            PrimaryOxygenTank = FindBlock<IMyGasTank>("Primary Oxygen Tank");
+            if (ExternalAirVent != null || PrimaryOxygenTank != null) SharedHardwareProvided = true;
+        }//Ends SharedHardwareCheck
+
+        public void UpdateShardHardwareStatistics()
+        {
+            if (PrimaryOxygenTank != null) CheckOxygenTankFillLevel();
+            if (ExternalAirVent != null) ExternalAtmosphereCheck(); else AtmosphereCheck = false;
+        }//Ends UpdateSharedHardwareStatistics
+
+        public void CheckOxygenTankFillLevel()
+        {
+            //Retrieve fill ration (0.0 to 1.0), then convert to percentage for comparison
+            double OxygenTankFillRatio = PrimaryOxygenTank.FilledRatio;
+            OxygenTankFillPercentage = OxygenTankFillRatio * 100;
+
+            OxygenTankFull = (OxygenTankFillPercentage >= 98);
+        }//Ends CheckOxygenTankLevel
+
+        public void ExternalAtmosphereCheck()
+        {
+            //0.8f to reduce false positives
+            float ExternalOxygenLevel = ExternalAirVent.GetOxygenLevel();
+            AtmosphereCheck = (ExternalOxygenLevel >= 0.80f) ? true : false;
+
+        }//Ends CheckForAtmosphere
 
         public void PassArguments(Airlock Airlock, string Argument)
         {
@@ -1253,6 +1264,12 @@ namespace IngameScript
                     {
                         string Command = ArgumentParts[1];
                         Airlock.ProcessArguments(Command);
+
+                        if (Command.Trim() == "update")
+                        {
+                            SharedHardwareCheck();
+                        }
+
                     }
                 }
             }
